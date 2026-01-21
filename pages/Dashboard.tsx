@@ -96,7 +96,9 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
 
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('pt-BR');
+    const datePart = dateString.split('T')[0];
+    const [year, month, day] = datePart.split('-');
+    return `${day}/${month}/${year}`;
   };
 
   const calculateAge = (birthDate: string) => {
@@ -109,6 +111,41 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
       age--;
     }
     return age + ' anos';
+  };
+
+  const calculateDuration = (entryDate: string) => {
+    if (!entryDate) return '-';
+    const start = new Date(entryDate);
+    const end = new Date();
+    
+    // Normalizar para evitar problemas de fuso horário no cálculo de dias
+    start.setHours(0,0,0,0);
+    end.setHours(0,0,0,0);
+
+    let years = end.getFullYear() - start.getFullYear();
+    let months = end.getMonth() - start.getMonth();
+    let days = end.getDate() - start.getDate();
+
+    if (days < 0) {
+        months--;
+        const prevMonth = new Date(end.getFullYear(), end.getMonth(), 0);
+        days += prevMonth.getDate();
+    }
+    if (months < 0) {
+        years--;
+        months += 12;
+    }
+
+    const parts = [];
+    if (years > 0) parts.push(`${years} ano${years > 1 ? 's' : ''}`);
+    if (months > 0) parts.push(`${months} ${months > 1 ? 'meses' : 'mês'}`);
+    if (days > 0) parts.push(`${days} dia${days > 1 ? 's' : ''}`);
+    
+    if (parts.length === 0) return 'Hoje';
+    if (parts.length === 1) return parts[0];
+    
+    const last = parts.pop();
+    return `${parts.join(', ')} e ${last}`;
   };
 
   return (
@@ -244,7 +281,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
                         <span className="text-sm text-slate-700 font-medium">
                             {formatDate(child.entry_date)}
                         </span>
-                        <span className="text-xs text-slate-400">Tempo: Recente</span>
+                        <span className="text-xs text-slate-500 font-medium text-gov-700">{calculateDuration(child.entry_date)}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4">

@@ -8,7 +8,8 @@ import {
   Building2,
   AlertTriangle,
   FileText,
-  Menu
+  Menu,
+  MessageCircle
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -80,6 +81,18 @@ const Layout: React.FC<LayoutProps> = ({ onLogout, isDemo }) => {
             <FileText className={`w-5 h-5 mr-3 ${isActive('/relatorios') ? 'text-white' : 'text-slate-500 group-hover:text-white'}`} />
             <span className="font-medium">Relatórios Técnicos</span>
           </Link>
+
+          <Link
+            to="/comunidade"
+            className={`flex items-center px-4 py-3.5 rounded-lg transition-all duration-200 group ${
+              isActive('/comunidade') 
+                ? 'bg-gov-600 text-white shadow-lg shadow-gov-900/20' 
+                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+            }`}
+          >
+            <MessageCircle className={`w-5 h-5 mr-3 ${isActive('/comunidade') ? 'text-white' : 'text-slate-500 group-hover:text-white'}`} />
+            <span className="font-medium">Comunidade</span>
+          </Link>
         </nav>
 
         <div className="p-4 border-t border-slate-800 bg-slate-950">
@@ -121,6 +134,7 @@ const Layout: React.FC<LayoutProps> = ({ onLogout, isDemo }) => {
              {isActive('/') && 'Visão Geral'}
              {isActive('/novo-acolhimento') && 'Cadastro de Admissão'}
              {isActive('/relatorios') && 'Gestão de Relatórios'}
+             {isActive('/comunidade') && 'Comunidade Inter-Lares'}
            </h2>
            <div className="flex items-center space-x-4">
               <span className="text-sm text-slate-500 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">

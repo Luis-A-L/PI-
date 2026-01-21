@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Save, AlertTriangle, Plus, Trash2, User, FileText } from 'lucide-react';
+import { ArrowLeft, Save, AlertTriangle, Plus, Trash2, User, FileText, Edit, Camera, Printer, MessageSquare, Clock, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { Child, FamilyMember, HealthTreatment, Commitment, ReferenceContact } from '../types';
+import { Child, FamilyMember, HealthTreatment, Commitment, ReferenceContact, PreviousAdmission, ChildPhoto, ChildNote, SiblingInCare } from '../types';
+import { jsPDF } from 'jspdf';
 
 interface ChildProfileProps {
   isDemo?: boolean;
@@ -16,6 +17,14 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasDisability, setHasDisability] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [photos, setPhotos] = useState<ChildPhoto[]>([]);
+  const [notes, setNotes] = useState<ChildNote[]>([]);
+  const [newNote, setNewNote] = useState('');
+  const [isNoteSubmitting, setIsNoteSubmitting] = useState(false);
+  const [showNotesModal, setShowNotesModal] = useState(false);
+  const [hasUnreadNotes, setHasUnreadNotes] = useState(false);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const submitAction = useRef<'draft' | 'completed'>('completed');
   
   // Initial State Mapping
@@ -27,11 +36,12 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
     entry_date: '', transferred_from: '', transferred_date: '', responsible_organ: '',
     cnj_guide: '', reference_professional: '', fas_guide: '',
     admission_reason_types: [], admission_reason_other: '', guardianship_council: '', counselor_name: '',
-    previous_admissions: false, previous_admissions_local: '',
+    previous_admissions: false, previous_admissions_local: '', previous_admissions_history: [],
     socio_educational_measure: false, socio_educational_measure_type: '', death_threats: false,
     ppcaam_evaluated: false, ppcaam_inserted: false, ppcaam_justification: '', street_situation: false,
     race_color: '', hair_color: '', eye_color: '', physical_others: '',
     family_type: '', family_composition: [], responsible_family: '', siblings_in_care: false, siblings_details: '',
+    family_type: '', family_composition: [], responsible_family: '', siblings_in_care: false, siblings_details: [],
     housing_condition: '', construction_type: '', housing_water: true, housing_sewage: true, housing_light: true,
     visits_received: [], visits_frequency: '', return_perspective: '', family_bond_exists: false, weekend_with_family: false, destituted_power: '',
     cras_monitoring: '', creas_monitoring: '', health_unit_monitoring: '', protection_network_monitoring: '', mandatory_notifications: false, referrals: '',
@@ -45,6 +55,8 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
   useEffect(() => {
     if (id) {
       fetchChildData(id);
+      fetchPhotos(id);
+      fetchNotes(id);
     }
   }, [id, isDemo]);
 
@@ -86,6 +98,14 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
 
       if (error) throw error;
       if (data) {
+        // Ensure siblings_details is an array
+        if (typeof data.siblings_details === 'string') {
+            try {
+                data.siblings_details = JSON.parse(data.siblings_details);
+            } catch (e) {
+                data.siblings_details = [];
+            }
+        }
         setFormData(data);
         setHasDisability(data.disabilities && data.disabilities.length > 0);
       }
@@ -95,6 +115,100 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const fetchPhotos = async (childId: string) => {
+    if (isDemo) {
+        setPhotos([
+            { id: '1', child_id: childId, url: 'https://via.placeholder.com/150', created_at: new Date().toISOString() }
+        ]);
+        return;
+    }
+    const { data } = await supabase
+        .from('child_photos')
+        .select('*')
+        .eq('child_id', childId)
+        .order('created_at', { ascending: false });
+    if (data) {
+        setPhotos(data);
+    }
+  };
+
+  const fetchNotes = async (childId: string) => {
+    if (isDemo) {
+        setNotes([
+            { id: '1', child_id: childId, institution_id: 'demo', content: 'Criança apresentou febre durante a noite (38.5). Medicada com Dipirona conforme prescrição.', created_at: new Date(Date.now() - 86400000).toISOString() },
+            { id: '2', child_id: childId, institution_id: 'demo', content: 'Visita da tia realizada com sucesso. Trouxe roupas novas.', created_at: new Date().toISOString() }
+        ]);
+        return;
+    }
+    const { data, error } = await supabase
+        .from('child_notes')
+        .select('*')
+        .eq('child_id', childId)
+        .order('created_at', { ascending: false });
+    
+    if (!error && data) {
+        setNotes(data);
+        
+        // Notification Logic: Check if there are notes newer than last view
+        if (data.length > 0) {
+            const lastViewedStr = localStorage.getItem(`last_viewed_notes_${childId}`);
+            const lastViewedTime = lastViewedStr ? new Date(lastViewedStr).getTime() : 0;
+            const latestNoteTime = new Date(data[0].created_at).getTime();
+
+            // If latest note is newer than last view (or never viewed), show notification
+            setHasUnreadNotes(latestNoteTime > lastViewedTime);
+        }
+    }
+  };
+
+  const handleAddNote = async () => {
+    if (!newNote.trim()) return;
+    setIsNoteSubmitting(true);
+
+    if (isDemo) {
+        const note: ChildNote = {
+            id: Math.random().toString(),
+            child_id: id!,
+            institution_id: 'demo',
+            content: newNote,
+            created_at: new Date().toISOString()
+        };
+        setNotes([note, ...notes]);
+        setNewNote('');
+        setIsNoteSubmitting(false);
+        return;
+    }
+
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Usuário não autenticado");
+        
+        const { data: profile } = await supabase.from('profiles').select('institution_id').eq('id', user.id).single();
+        if (!profile) throw new Error("Perfil não encontrado");
+
+        const { error } = await supabase.from('child_notes').insert([{
+            child_id: id,
+            institution_id: profile.institution_id,
+            content: newNote
+        }]);
+
+        if (error) throw error;
+        setNewNote('');
+        fetchNotes(id!);
+    } catch (err) {
+        alert("Erro ao salvar nota.");
+    } finally {
+        setIsNoteSubmitting(false);
+    }
+  };
+
+  const handleOpenNotes = () => {
+    setShowNotesModal(true);
+    setHasUnreadNotes(false);
+    // Update last viewed time to now
+    localStorage.setItem(`last_viewed_notes_${id}`, new Date().toISOString());
   };
 
   // Dynamic Table Logic
@@ -159,6 +273,36 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
     setFormData(prev => ({ ...prev, commitments: newItems }));
   };
 
+  const addPreviousAdmission = () => {
+    const item: PreviousAdmission = { institution_name: '', entry_date: '', exit_date: '', motive: '' };
+    setFormData(prev => ({ ...prev, previous_admissions_history: [...(prev.previous_admissions_history || []), item] }));
+  };
+
+  const removePreviousAdmission = (index: number) => {
+    setFormData(prev => ({ ...prev, previous_admissions_history: prev.previous_admissions_history?.filter((_, i) => i !== index) }));
+  };
+
+  const updatePreviousAdmission = (index: number, field: keyof PreviousAdmission, value: string) => {
+    const newItems = [...(formData.previous_admissions_history || [])];
+    newItems[index] = { ...newItems[index], [field]: value };
+    setFormData(prev => ({ ...prev, previous_admissions_history: newItems }));
+  };
+
+  const addSibling = () => {
+    const item: SiblingInCare = { name: '', location: '', date: '' };
+    setFormData(prev => ({ ...prev, siblings_details: [...(prev.siblings_details || []), item] }));
+  };
+
+  const removeSibling = (index: number) => {
+    setFormData(prev => ({ ...prev, siblings_details: prev.siblings_details?.filter((_, i) => i !== index) }));
+  };
+
+  const updateSibling = (index: number, field: keyof SiblingInCare, value: string) => {
+    const newItems = [...(formData.siblings_details || [])];
+    newItems[index] = { ...newItems[index], [field]: value };
+    setFormData(prev => ({ ...prev, siblings_details: newItems }));
+  };
+
   // General Handler
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
@@ -182,6 +326,35 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
 
   const varaOptions = ['Foro Central', 'CIC', 'S. Felicidade', 'Pinheirinho', 'Boqueirão', 'Bairro Novo'];
   const showVaraInput = formData.forum_vara === 'Outro' || (formData.forum_vara && !varaOptions.includes(formData.forum_vara));
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0 || !id) return;
+    const file = e.target.files[0];
+    
+    if (isDemo) {
+        alert("Upload simulado (Demo)");
+        return;
+    }
+
+    try {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${id}/${Math.random()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage.from('child-photos').upload(fileName, file);
+        
+        if (uploadError) throw uploadError;
+
+        const { data: publicUrlData } = supabase.storage.from('child-photos').getPublicUrl(fileName);
+        
+        const { error: dbError } = await supabase.from('child_photos').insert([
+            { child_id: id, url: publicUrlData.publicUrl }
+        ]);
+
+        if (dbError) throw dbError;
+        fetchPhotos(id);
+    } catch (err: any) {
+        alert("Erro ao fazer upload: " + err.message);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -212,12 +385,240 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
 
       if (updateError) throw updateError;
       alert(submitAction.current === 'draft' ? "Rascunho salvo com sucesso!" : "PIA atualizado com sucesso!");
-      navigate('/');
+      setIsEditing(false);
+      // navigate('/'); // Comentado para manter na tela e ver o resultado, ou descomente se preferir voltar
     } catch (err: any) {
       console.error(err);
       setError(err.message || "Erro ao salvar.");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const generatePDF = async () => {
+    setIsGeneratingPDF(true);
+    try {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 20;
+    let yPos = 20;
+    const lineHeight = 7;
+
+    // Helper to add text
+    const addText = (text: string, isBold: boolean = false, fontSize: number = 12) => {
+        doc.setFont("times", isBold ? "bold" : "normal");
+        doc.setFontSize(fontSize);
+        
+        // Handle long text wrapping
+        const splitText = doc.splitTextToSize(text, pageWidth - (margin * 2));
+        doc.text(splitText, margin, yPos);
+        yPos += (splitText.length * lineHeight);
+        
+        // Page break check
+        if (yPos > 280) {
+            doc.addPage();
+            yPos = 20;
+        }
+    };
+
+    // --- HEADER ---
+    doc.setFont("times", "bold");
+    doc.setFontSize(16);
+    doc.text("PLANO INDIVIDUAL DE ATENDIMENTO - PIA", pageWidth / 2, yPos, { align: "center" });
+    yPos += 15;
+
+    // --- PHOTO ---
+    if (photos.length > 0) {
+        try {
+            // Create an image element to load the URL
+            const img = new Image();
+            img.crossOrigin = "Anonymous";
+            img.src = photos[0].url;
+            await new Promise((resolve) => {
+                img.onload = resolve;
+                img.onerror = resolve; // Continue even if error
+            });
+
+            // Draw image centered (approx 3x4cm ratio -> 30x40mm)
+            doc.addImage(img, "JPEG", (pageWidth - 40) / 2, yPos, 40, 53);
+            yPos += 60;
+        } catch (e) {
+            console.error("Erro ao carregar imagem para PDF", e);
+            addText("[Foto não disponível]", false, 10);
+        }
+    } else {
+        yPos += 10;
+    }
+
+    // --- NAME ---
+    doc.setFontSize(14);
+    doc.setFont("times", "bold");
+    doc.text(formData.full_name?.toUpperCase() || "NOME NÃO INFORMADO", pageWidth / 2, yPos, { align: "center" });
+    yPos += 20;
+
+    // --- SECTIONS ---
+    
+    // 1. Identificação
+    addText("1. IDENTIFICAÇÃO / DADOS PESSOAIS", true, 12);
+    addText(`Data de Nascimento: ${formData.birth_date ? new Date(formData.birth_date).toLocaleDateString('pt-BR') : '-'}`);
+    addText(`Naturalidade: ${formData.naturalness || '-'} - ${formData.uf || '-'}`);
+    addText(`Sexo: ${formData.sex === 'M' ? 'Masculino' : 'Feminino'}`);
+    addText(`Filiação: Mãe: ${formData.mother_name || '-'} | Pai: ${formData.father_name || '-'}`);
+    if (formData.filiation_destituted) addText("(Destituídos do poder familiar)");
+    addText(`Autos nº: ${formData.autos_number || '-'}`);
+    addText(`Vara/Fórum: ${formData.forum_vara || '-'}`);
+    addText(`Certidão Nascimento: ${formData.birth_certificate || '-'}`);
+    addText(`CPF: ${formData.cpf || '-'}`);
+    
+    if (formData.reference_contacts && formData.reference_contacts.length > 0) {
+        addText("Contatos de Referência:", true, 11);
+        formData.reference_contacts.forEach(c => {
+            addText(`- ${c.name} (${c.relationship}): ${c.phone} - ${c.address}`);
+        });
+    }
+    yPos += 5;
+
+    // 2. Acolhimento
+    addText("2. INFORMAÇÕES SOBRE ACOLHIMENTO", true, 12);
+    addText(`Primeiro Acolhimento: ${formData.first_admission ? 'Sim' : 'Não'}`);
+    addText(`Data de Entrada: ${formData.entry_date ? new Date(formData.entry_date).toLocaleDateString('pt-BR') : '-'}`);
+    if (!formData.first_admission) {
+        addText(`Transferido de: ${formData.transferred_from || '-'} em ${formData.transferred_date ? new Date(formData.transferred_date).toLocaleDateString('pt-BR') : '-'}`);
+    }
+    addText(`Motivo: ${formData.admission_reason_types?.join(', ') || '-'}`);
+    if (formData.admission_reason_other) addText(`Outros motivos: ${formData.admission_reason_other}`);
+    addText(`Órgão Responsável: ${formData.responsible_organ || '-'}`);
+    addText(`Guia CNJ: ${formData.cnj_guide || '-'}`);
+    addText(`Guia FAS: ${formData.fas_guide || '-'}`);
+    addText(`Profissional Ref.: ${formData.reference_professional || '-'}`);
+    addText(`Conselho Tutelar: ${formData.guardianship_council || '-'} (Conselheiro: ${formData.counselor_name || '-'})`);
+    
+    if (formData.previous_admissions) {
+        addText(`Acolhimentos Anteriores: Sim (${formData.previous_admissions_local || '-'})`);
+        if (formData.previous_admissions_history && formData.previous_admissions_history.length > 0) {
+             formData.previous_admissions_history.forEach(h => {
+                 addText(`- ${h.institution_name} (${h.entry_date ? new Date(h.entry_date).toLocaleDateString('pt-BR') : '?'} a ${h.exit_date ? new Date(h.exit_date).toLocaleDateString('pt-BR') : '?'}) - ${h.motive}`);
+             });
+        }
+    } else {
+        addText("Acolhimentos Anteriores: Não");
+    }
+    yPos += 5;
+
+    // 3. Vulnerabilidades
+    addText("3. VULNERABILIDADES", true, 12);
+    addText(`Medida Socioeducativa: ${formData.socio_educational_measure ? `Sim (${formData.socio_educational_measure_type})` : 'Não'}`);
+    addText(`Ameaça de Morte: ${formData.death_threats ? 'Sim' : 'Não'}`);
+    addText(`PPCAAM: ${formData.ppcaam_inserted ? 'Inserido' : (formData.ppcaam_evaluated ? 'Avaliado' : 'Não')}`);
+    if (formData.ppcaam_justification) addText(`Justificativa PPCAAM: ${formData.ppcaam_justification}`);
+    addText(`Situação de Rua: ${formData.street_situation ? 'Sim' : 'Não'}`);
+    yPos += 5;
+
+    // 4. Características Físicas
+    addText("4. CARACTERÍSTICAS FÍSICAS", true, 12);
+    addText(`Cor/Raça: ${formData.race_color || '-'}`);
+    addText(`Cabelo: ${formData.hair_color || '-'}`);
+    addText(`Olhos: ${formData.eye_color || '-'}`);
+    addText(`Outros: ${formData.physical_others || '-'}`);
+    yPos += 5;
+
+    // 5. Situação Familiar
+    addText("5. SITUAÇÃO FAMILIAR", true, 12);
+    addText(`Tipo de Família: ${formData.family_type || '-'}`);
+    addText(`Responsável Familiar: ${formData.responsible_family || '-'}`);
+    addText(`Irmãos em Acolhimento: ${formData.siblings_in_care ? 'Sim' : 'Não'}`);
+    if (formData.siblings_in_care && formData.siblings_details && formData.siblings_details.length > 0) {
+        formData.siblings_details.forEach(s => {
+            addText(`- ${s.name} (${s.location}) - ${s.date ? new Date(s.date).toLocaleDateString('pt-BR') : '-'}`);
+        });
+    }
+    
+    if (formData.family_composition && formData.family_composition.length > 0) {
+        addText("Composição Familiar:", true, 11);
+        formData.family_composition.forEach(f => {
+            addText(`- ${f.name} (${f.kinship}), ${f.birth_date ? new Date(f.birth_date).toLocaleDateString('pt-BR') : '-'}, ${f.occupation || '-'}, R$ ${f.income || '-'}`);
+        });
+    }
+    yPos += 5;
+
+    // 5.2 Habitacional e Vínculo
+    addText("5.2 HABITAÇÃO E VÍNCULOS", true, 12);
+    addText(`Moradia: ${formData.housing_condition || '-'} (${formData.construction_type || '-'})`);
+    addText(`Infraestrutura: ${[formData.housing_water && 'Água', formData.housing_sewage && 'Esgoto', formData.housing_light && 'Luz'].filter(Boolean).join(', ') || 'Nenhuma'}`);
+    addText(`Visitas de: ${formData.visits_received?.join(', ') || 'Ninguém'}`);
+    addText(`Frequência: ${formData.visits_frequency || '-'}`);
+    addText(`Vínculo Preservado: ${formData.family_bond_exists ? 'Sim' : 'Não'}`);
+    addText(`Destituído Poder Familiar: ${formData.destituted_power || '-'}`);
+    yPos += 5;
+
+    // 5.4 Rede
+    addText("5.4 REDE SOCIOASSISTENCIAL", true, 12);
+    addText(`CRAS: ${formData.cras_monitoring || '-'}`);
+    addText(`CREAS: ${formData.creas_monitoring || '-'}`);
+    addText(`Unidade Saúde: ${formData.health_unit_monitoring || '-'}`);
+    addText(`Encaminhamentos: ${formData.referrals || '-'}`);
+    yPos += 5;
+
+    // 6. Saúde
+    addText("6. SAÚDE", true, 12);
+    addText(`Deficiências: ${formData.disabilities?.length ? formData.disabilities.join(', ') : 'Nenhuma declarada'}`);
+    addText(`CID: ${formData.cid || '-'}`);
+    addText(`Acompanhamento: ${formData.health_followup || '-'}`);
+    
+    if (formData.health_treatments && formData.health_treatments.length > 0) {
+        addText("Tratamentos em curso:", true, 11);
+        formData.health_treatments.forEach(t => {
+            addText(`- ${t.treatment} (${t.medication}): ${t.frequency} em ${t.local}`);
+        });
+    } else {
+        addText("Nenhum tratamento medicamentoso registrado.");
+    }
+
+    addText(`Dependência Química: ${formData.chemical_dependency ? 'Sim' : 'Não'}`);
+    if (formData.chemical_dependency) {
+        addText(`Substâncias: ${formData.drugs_used?.join(', ') || '-'}`);
+        addText(`Tratamento: ${formData.dependency_treatment ? 'Sim' : 'Não'}`);
+    }
+    yPos += 5;
+
+    // 7. Educação
+    addText("7. EDUCAÇÃO", true, 12);
+    addText(`Situação: ${formData.school_status || '-'}`);
+    addText(`Nível: ${formData.education_level || '-'}`);
+    addText(`Escola: ${formData.school_name || '-'} (${formData.school_phone || '-'})`);
+    yPos += 5;
+
+    // 8. Trabalho
+    addText("8. TRABALHO", true, 12);
+    addText(`Inserção: ${formData.work_insertion || '-'}`);
+    yPos += 5;
+
+    // 9-11 Outros
+    addText("9. OUTROS", true, 12);
+    addText(`Esporte e Lazer: ${formData.sports_leisure || '-'}`);
+    addText(`Contexto Histórico: ${formData.historical_context || '-'}`);
+    addText(`Situação Atual: ${formData.current_situation || '-'}`);
+    yPos += 5;
+
+    // 12. Compromissos
+    if (formData.commitments && formData.commitments.length > 0) {
+        addText("12. COMPROMISSOS PACTUADOS", true, 12);
+        formData.commitments.forEach(c => {
+            addText(`- ${c.commitment} (Resp: ${c.responsible}) - Prazo: ${c.deadline}`);
+            addText(`  Rede: ${c.network} | Resultados Esperados: ${c.expected_results}`);
+        });
+        yPos += 5;
+    }
+
+    // 13. Considerações Finais
+    addText("13. CONSIDERAÇÕES FINAIS", true, 12);
+    addText(formData.final_considerations || "Sem considerações registradas.");
+
+    doc.save(`PIA_${formData.full_name?.replace(/\s+/g, '_')}.pdf`);
+    } catch (err) {
+      console.error("Erro ao gerar PDF:", err);
+    } finally {
+      setIsGeneratingPDF(false);
     }
   };
 
@@ -230,7 +631,66 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
   }
 
   return (
-    <div className="max-w-5xl mx-auto pb-20">
+    <div className="max-w-5xl mx-auto pb-20 print:p-0 print:max-w-none relative">
+      
+      {/* --- NOTES POST-IT (Floating) --- */}
+      <div className="fixed top-24 right-6 z-40 print:hidden">
+        <button 
+            onClick={handleOpenNotes}
+            className="relative group transition-transform hover:scale-105"
+            title="Diário de Acolhimento"
+        >
+            <div className="absolute top-0 right-0 bg-yellow-200 w-12 h-12 transform rotate-6 shadow-md border border-yellow-300 rounded-sm"></div>
+            <div className="absolute top-0 right-0 bg-yellow-100 w-12 h-12 transform rotate-3 shadow-md border border-yellow-300 rounded-sm"></div>
+            <div className="relative bg-yellow-50 w-12 h-12 shadow-lg border border-yellow-200 flex items-center justify-center hover:bg-yellow-100 transition-colors rounded-sm">
+            <MessageSquare className="text-yellow-700 w-6 h-6" />
+            {hasUnreadNotes && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center shadow-sm">
+                !
+                </span>
+            )}
+            </div>
+        </button>
+      </div>
+
+      {/* --- NOTES MODAL --- */}
+      {showNotesModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm print:hidden p-4">
+            <div className="bg-yellow-50 w-full max-w-md rounded-lg shadow-2xl border-2 border-yellow-200 flex flex-col max-h-[80vh] animate-in fade-in zoom-in duration-200">
+                <div className="p-4 border-b border-yellow-200 flex justify-between items-center bg-yellow-100 rounded-t-lg">
+                    <h3 className="font-bold text-yellow-900 flex items-center text-lg">
+                        <MessageSquare className="w-5 h-5 mr-2" />
+                        Diário de Acolhimento
+                    </h3>
+                    <button onClick={() => setShowNotesModal(false)} className="text-yellow-800 hover:text-yellow-900 hover:bg-yellow-200 p-1 rounded-full transition-colors">
+                        <X className="w-6 h-6" />
+                    </button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-yellow-50/50">
+                    {notes.length === 0 && <p className="text-yellow-700 text-sm italic text-center py-4">Nenhuma anotação registrada.</p>}
+                    {notes.map(note => (
+                        <div key={note.id} className="bg-white p-3 rounded shadow-sm border border-yellow-100 relative">
+                            <div className="flex items-center text-xs text-gray-400 mb-1">
+                                <Clock className="w-3 h-3 mr-1" />
+                                {new Date(note.created_at).toLocaleString('pt-BR')}
+                            </div>
+                            <p className="text-sm text-gray-800 whitespace-pre-wrap">{note.content}</p>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="p-4 border-t border-yellow-200 bg-yellow-100 rounded-b-lg">
+                    <textarea className="w-full border-yellow-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500 sm:text-sm p-2 bg-white" rows={2} placeholder="Nova anotação..." value={newNote} onChange={(e) => setNewNote(e.target.value)}></textarea>
+                    <button type="button" onClick={handleAddNote} disabled={isNoteSubmitting || !newNote.trim()} className="mt-2 w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none disabled:opacity-50">
+                        {isNoteSubmitting ? 'Salvando...' : 'Adicionar Nota'}
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      <div className="print:hidden">
       <div className="mb-6 flex items-center justify-between">
         <div>
             <Link to="/" className="text-gray-500 hover:text-gray-700 flex items-center mb-2 text-sm">
@@ -251,6 +711,41 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
         </div>
       </div>
 
+      {/* Photo Gallery Section */}
+      <div className="bg-white shadow-sm rounded-lg border border-gray-200 p-6 mb-8 print:break-inside-avoid">
+        <div className="flex flex-col md:flex-row gap-6 items-start">
+            <div className="w-full md:w-1/3">
+                <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden border-2 border-gray-200 flex items-center justify-center relative group">
+                    {photos.length > 0 ? (
+                        <img src={photos[0].url} alt="Foto Atual" className="w-full h-full object-cover" />
+                    ) : (
+                        <User className="w-24 h-24 text-gray-300" />
+                    )}
+                    {isEditing && (
+                        <label className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                            <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+                            <div className="text-white flex flex-col items-center">
+                                <Camera className="w-8 h-8 mb-1" />
+                                <span className="text-sm font-bold">Alterar Foto</span>
+                            </div>
+                        </label>
+                    )}
+                </div>
+            </div>
+            <div className="flex-1">
+                <h3 className="text-lg font-bold text-gray-900 mb-2">Galeria de Fotos</h3>
+                <div className="grid grid-cols-4 gap-2">
+                    {photos.slice(1).map(photo => (
+                        <div key={photo.id} className="aspect-square rounded-md overflow-hidden border border-gray-200">
+                            <img src={photo.url} alt="Histórico" className="w-full h-full object-cover" />
+                        </div>
+                    ))}
+                    {photos.length <= 1 && <p className="text-sm text-gray-500 col-span-4">Nenhuma foto antiga.</p>}
+                </div>
+            </div>
+        </div>
+      </div>
+
       <form onSubmit={handleSubmit} className="space-y-8">
         {error && (
           <div className="bg-red-50 border-l-4 border-red-500 p-4 flex items-start">
@@ -265,23 +760,23 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
             <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-2">
                     <label className="block text-sm font-bold text-gray-900">Nome Completo</label>
-                    <input type="text" name="full_name" value={formData.full_name} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900 focus:ring-gov-600 focus:border-gov-600" required />
+                    <input type="text" name="full_name" value={formData.full_name} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900 focus:ring-gov-600 focus:border-gov-600" required disabled={!isEditing} />
                 </div>
                 <div>
                     <label className="block text-sm font-bold text-gray-900">Data Nascimento</label>
-                    <input type="date" name="birth_date" value={formData.birth_date} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900 focus:ring-gov-600 focus:border-gov-600" required />
+                    <input type="date" name="birth_date" value={formData.birth_date} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900 focus:ring-gov-600 focus:border-gov-600" required disabled={!isEditing} />
                 </div>
                 <div>
                     <label className="block text-sm font-bold text-gray-900">Naturalidade</label>
-                    <input type="text" name="naturalness" value={formData.naturalness} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" />
+                    <input type="text" name="naturalness" value={formData.naturalness} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing} />
                 </div>
                 <div>
                     <label className="block text-sm font-bold text-gray-900">UF</label>
-                    <input type="text" name="uf" maxLength={2} value={formData.uf} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900 uppercase" />
+                    <input type="text" name="uf" maxLength={2} value={formData.uf} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900 uppercase" disabled={!isEditing} />
                 </div>
                 <div>
                     <label className="block text-sm font-bold text-gray-900">Sexo</label>
-                    <select name="sex" value={formData.sex} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900">
+                    <select name="sex" value={formData.sex} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing}>
                         <option value="M">Masculino</option>
                         <option value="F">Feminino</option>
                     </select>
@@ -291,20 +786,20 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                 <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm font-bold text-gray-900">Nome da Mãe</label>
-                        <input type="text" name="mother_name" value={formData.mother_name} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" />
+                        <input type="text" name="mother_name" value={formData.mother_name} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing} />
                     </div>
                     <div>
                         <label className="block text-sm font-bold text-gray-900">Nome do Pai</label>
-                        <input type="text" name="father_name" value={formData.father_name} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" />
+                        <input type="text" name="father_name" value={formData.father_name} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing} />
                     </div>
                     <div className="md:col-span-2 flex items-center">
-                        <input type="checkbox" name="filiation_destituted" checked={formData.filiation_destituted} onChange={handleChange} className="mr-2" />
+                        <input type="checkbox" name="filiation_destituted" checked={formData.filiation_destituted} onChange={handleChange} className="mr-2" disabled={!isEditing} />
                         <span className="text-sm text-gray-700">Destituídos do poder familiar?</span>
                     </div>
                 </div>
                 <div>
                     <label className="block text-sm font-bold text-gray-900">Autos nº</label>
-                    <input type="text" name="autos_number" value={formData.autos_number} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" />
+                    <input type="text" name="autos_number" value={formData.autos_number} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing} />
                 </div>
                 <div className="md:col-span-2">
                     <label className="block text-sm font-bold text-gray-900">Vara / Fórum</label>
@@ -313,6 +808,7 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                         value={showVaraInput ? 'Outro' : formData.forum_vara} 
                         onChange={(e) => e.target.value === 'Outro' ? setFormData(prev => ({ ...prev, forum_vara: 'Outro' })) : handleChange(e)} 
                         className="w-full border-gray-300 rounded-md border p-2 text-gray-900"
+                        disabled={!isEditing}
                     >
                         <option value="">Selecione...</option>
                         {varaOptions.map(opt => (
@@ -321,7 +817,7 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                         <option value="Outro">Outro</option>
                     </select>
                     {showVaraInput && (
-                        <input type="text" name="forum_vara" value={formData.forum_vara === 'Outro' ? '' : formData.forum_vara} onChange={handleChange} className="mt-2 w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Especifique a Vara/Fórum" />
+                        <input type="text" name="forum_vara" value={formData.forum_vara === 'Outro' ? '' : formData.forum_vara} onChange={handleChange} className="mt-2 w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Especifique a Vara/Fórum" disabled={!isEditing} />
                     )}
                 </div>
                 <div className="md:col-span-3 border-t pt-4 mt-2">
@@ -329,11 +825,11 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                 </div>
                 <div className="md:col-span-2">
                     <label className="block text-sm font-bold text-gray-900">Certidão Nascimento</label>
-                    <input type="text" name="birth_certificate" value={formData.birth_certificate} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Matrícula / Livro / Folha" />
+                    <input type="text" name="birth_certificate" value={formData.birth_certificate} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Matrícula / Livro / Folha" disabled={!isEditing} />
                 </div>
                 <div>
                     <label className="block text-sm font-bold text-gray-900">CPF</label>
-                    <input type="text" name="cpf" value={formData.cpf} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" />
+                    <input type="text" name="cpf" value={formData.cpf} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing} />
                 </div>
                 <div className="md:col-span-3">
                     <label className="block text-sm font-bold text-gray-900 mb-2">Contatos de Referência</label>
@@ -351,17 +847,17 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {formData.reference_contacts?.map((contact, idx) => (
                                     <tr key={idx} className="border-b border-gray-200 divide-x divide-gray-200">
-                                        <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={contact.name} onChange={e => updateReferenceContact(idx, 'name', e.target.value)} placeholder="Nome" /></td>
-                                        <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={contact.phone} onChange={e => updateReferenceContact(idx, 'phone', e.target.value)} placeholder="Tel" /></td>
-                                        <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={contact.relationship} onChange={e => updateReferenceContact(idx, 'relationship', e.target.value)} placeholder="Ex: Tia" /></td>
-                                        <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={contact.address} onChange={e => updateReferenceContact(idx, 'address', e.target.value)} /></td>
-                                        <td className="p-1 text-center"><button type="button" onClick={() => removeReferenceContact(idx)} className="text-red-500 hover:text-red-700"><Trash2 size={16} /></button></td>
+                                        <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={contact.name} onChange={e => updateReferenceContact(idx, 'name', e.target.value)} placeholder="Nome" disabled={!isEditing} /></td>
+                                        <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={contact.phone} onChange={e => updateReferenceContact(idx, 'phone', e.target.value)} placeholder="Tel" disabled={!isEditing} /></td>
+                                        <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={contact.relationship} onChange={e => updateReferenceContact(idx, 'relationship', e.target.value)} placeholder="Ex: Tia" disabled={!isEditing} /></td>
+                                        <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={contact.address} onChange={e => updateReferenceContact(idx, 'address', e.target.value)} disabled={!isEditing} /></td>
+                                        <td className="p-1 text-center">{isEditing && <button type="button" onClick={() => removeReferenceContact(idx)} className="text-red-500 hover:text-red-700"><Trash2 size={16} /></button>}</td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
-                    <button type="button" onClick={addReferenceContact} className="text-sm text-gov-700 font-medium flex items-center"><Plus size={16} className="mr-1"/> Adicionar Contato</button>
+                    {isEditing && <button type="button" onClick={addReferenceContact} className="text-sm text-gov-700 font-medium flex items-center"><Plus size={16} className="mr-1"/> Adicionar Contato</button>}
                 </div>
             </div>
         </section>
@@ -379,18 +875,32 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                             checked={formData.first_admission} 
                             onChange={(e) => setFormData(p => ({...p, first_admission: e.target.checked}))} 
                             className="w-5 h-5 text-gov-600 rounded focus:ring-gov-500 border-gray-300 mr-3" 
+                            disabled={!isEditing}
                         />
                         <span className="font-bold text-gray-900">Este é o primeiro acolhimento institucional da criança/adolescente</span>
                     </label>
                 </div>
 
+                {!formData.first_admission && (
+                <div className="md:col-span-2 mb-2">
+                    <div className="flex items-center space-x-4">
+                        <span className="text-sm font-bold text-gray-900">Acolhimentos Anteriores?</span>
+                        <label className="inline-flex items-center"><input type="radio" name="previous_admissions" checked={formData.previous_admissions === true} onChange={() => setFormData(p => ({...p, previous_admissions: true}))} className="mr-1" disabled={!isEditing} /> Sim</label>
+                        <label className="inline-flex items-center"><input type="radio" name="previous_admissions" checked={formData.previous_admissions === false} onChange={() => setFormData(p => ({...p, previous_admissions: false}))} className="mr-1" disabled={!isEditing} /> Não</label>
+                    </div>
+                    {formData.previous_admissions && (
+                        <input type="text" name="previous_admissions_local" value={formData.previous_admissions_local} onChange={handleChange} className="mt-1 w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Local" disabled={!isEditing} />
+                    )}
+                </div>
+                )}
+
                 <div>
                     <label className="block text-sm font-bold text-gray-900">Data Acolhimento</label>
-                    <input type="date" name="entry_date" value={formData.entry_date} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" required />
+                    <input type="date" name="entry_date" value={formData.entry_date} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" required disabled={!isEditing} />
                 </div>
                 <div>
                     <label className="block text-sm font-bold text-gray-900">Órgão Responsável</label>
-                    <input type="text" name="responsible_organ" value={formData.responsible_organ} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" />
+                    <input type="text" name="responsible_organ" value={formData.responsible_organ} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing} />
                 </div>
 
                 {/* Transfer Fields - Hidden if first admission */}
@@ -398,26 +908,55 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                     <>
                         <div>
                             <label className="block text-sm font-bold text-gray-900">Transferido de</label>
-                            <input type="text" name="transferred_from" value={formData.transferred_from} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" />
+                            <input type="text" name="transferred_from" value={formData.transferred_from} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing} />
                         </div>
                         <div>
                             <label className="block text-sm font-bold text-gray-900">Data Transferência</label>
-                            <input type="date" name="transferred_date" value={formData.transferred_date} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" />
+                            <input type="date" name="transferred_date" value={formData.transferred_date} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing} />
+                        </div>
+
+                        <div className="md:col-span-2 mt-4">
+                            <label className="block text-sm font-bold text-gray-900 mb-2">Histórico de Acolhimentos Anteriores</label>
+                            <div className="overflow-x-auto mb-2">
+                                <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-md">
+                                    <thead className="bg-gray-50 border-b border-gray-200">
+                                        <tr className="divide-x divide-gray-200">
+                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Instituição / Casa Lar</th>
+                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Data Entrada</th>
+                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Data Saída</th>
+                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Motivo Saída/Reingresso</th>
+                                            <th className="px-3 py-2"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-gray-200">
+                                        {formData.previous_admissions_history?.map((item, idx) => (
+                                            <tr key={idx} className="border-b border-gray-200 divide-x divide-gray-200">
+                                                <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={item.institution_name} onChange={e => updatePreviousAdmission(idx, 'institution_name', e.target.value)} placeholder="Nome do local" disabled={!isEditing} /></td>
+                                                <td className="p-1"><input type="date" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={item.entry_date} onChange={e => updatePreviousAdmission(idx, 'entry_date', e.target.value)} disabled={!isEditing} /></td>
+                                                <td className="p-1"><input type="date" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={item.exit_date} onChange={e => updatePreviousAdmission(idx, 'exit_date', e.target.value)} disabled={!isEditing} /></td>
+                                                <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={item.motive} onChange={e => updatePreviousAdmission(idx, 'motive', e.target.value)} placeholder="Motivo" disabled={!isEditing} /></td>
+                                                <td className="p-1 text-center">{isEditing && <button type="button" onClick={() => removePreviousAdmission(idx)} className="text-red-500 hover:text-red-700"><Trash2 size={16} /></button>}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {isEditing && <button type="button" onClick={addPreviousAdmission} className="text-sm text-gov-700 font-medium flex items-center"><Plus size={16} className="mr-1"/> Adicionar Histórico</button>}
                         </div>
                     </>
                 )}
 
                 <div>
                     <label className="block text-sm font-bold text-gray-900">Guia CNJ</label>
-                    <input type="text" name="cnj_guide" value={formData.cnj_guide} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" />
+                    <input type="text" name="cnj_guide" value={formData.cnj_guide} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing} />
                 </div>
                 <div>
                     <label className="block text-sm font-bold text-gray-900">Guia FAS</label>
-                    <input type="text" name="fas_guide" value={formData.fas_guide} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" />
+                    <input type="text" name="fas_guide" value={formData.fas_guide} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing} />
                 </div>
                 <div className="md:col-span-2">
                     <label className="block text-sm font-bold text-gray-900">Profissional Referência (Núcleo Psicossocial Vara Infância)</label>
-                    <input type="text" name="reference_professional" value={formData.reference_professional} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" />
+                    <input type="text" name="reference_professional" value={formData.reference_professional} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing} />
                 </div>
                 
                 <div className="md:col-span-2 border-t pt-2">
@@ -425,34 +964,23 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                     <div className="grid grid-cols-2 gap-2">
                         {['Violência Doméstica', 'Situação de Rua', 'Suspeita de Abuso Sexual', 'Exploração Sexual', 'Conflito com a Lei', 'Ameaça de Morte', 'Vínculos Rompidos'].map(reason => (
                              <label key={reason} className="flex items-center space-x-2">
-                                <input type="checkbox" checked={formData.admission_reason_types?.includes(reason)} onChange={(e) => handleCheckboxGroup('admission_reason_types', reason, e.target.checked)} />
+                                <input type="checkbox" checked={formData.admission_reason_types?.includes(reason)} onChange={(e) => handleCheckboxGroup('admission_reason_types', reason, e.target.checked)} disabled={!isEditing} />
                                 <span className="text-sm text-gray-700">{reason}</span>
                              </label>
                         ))}
                     </div>
-                    <input type="text" name="admission_reason_other" value={formData.admission_reason_other} onChange={handleChange} className="mt-2 w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Outros (especifique)" />
+                    <input type="text" name="admission_reason_other" value={formData.admission_reason_other} onChange={handleChange} className="mt-2 w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Outros (especifique)" disabled={!isEditing} />
                 </div>
 
                 <div className="md:col-span-2 grid grid-cols-2 gap-4 pt-2">
                      <div>
                         <label className="block text-sm font-bold text-gray-900">Conselho Tutelar Ref.</label>
-                        <input type="text" name="guardianship_council" value={formData.guardianship_council} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" />
+                        <input type="text" name="guardianship_council" value={formData.guardianship_council} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing} />
                      </div>
                      <div>
                         <label className="block text-sm font-bold text-gray-900">Nome Conselheiro</label>
-                        <input type="text" name="counselor_name" value={formData.counselor_name} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" />
+                        <input type="text" name="counselor_name" value={formData.counselor_name} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing} />
                      </div>
-                </div>
-
-                <div className="md:col-span-2">
-                    <div className="flex items-center space-x-4">
-                        <span className="text-sm font-bold text-gray-900">Acolhimentos Anteriores?</span>
-                        <label className="inline-flex items-center"><input type="radio" name="previous_admissions" checked={formData.previous_admissions === true} onChange={() => setFormData(p => ({...p, previous_admissions: true}))} className="mr-1"/> Sim</label>
-                        <label className="inline-flex items-center"><input type="radio" name="previous_admissions" checked={formData.previous_admissions === false} onChange={() => setFormData(p => ({...p, previous_admissions: false}))} className="mr-1"/> Não</label>
-                    </div>
-                    {formData.previous_admissions && (
-                        <input type="text" name="previous_admissions_local" value={formData.previous_admissions_local} onChange={handleChange} className="mt-1 w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Local" />
-                    )}
                 </div>
             </div>
         </section>
@@ -463,11 +991,11 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
             <div className="p-6 space-y-4">
                  <div className="flex items-center gap-4">
                     <span className="text-sm font-bold text-gray-900 w-64">Em cumprimento de medida socioeducativa:</span>
-                    <label><input type="radio" name="socio_educational_measure" checked={formData.socio_educational_measure} onChange={() => setFormData(p => ({...p, socio_educational_measure: true}))} /> Sim</label>
-                    <label><input type="radio" name="socio_educational_measure" checked={!formData.socio_educational_measure} onChange={() => setFormData(p => ({...p, socio_educational_measure: false}))} /> Não</label>
+                    <label><input type="radio" name="socio_educational_measure" checked={formData.socio_educational_measure} onChange={() => setFormData(p => ({...p, socio_educational_measure: true}))} disabled={!isEditing} /> Sim</label>
+                    <label><input type="radio" name="socio_educational_measure" checked={!formData.socio_educational_measure} onChange={() => setFormData(p => ({...p, socio_educational_measure: false}))} disabled={!isEditing} /> Não</label>
                  </div>
                  {formData.socio_educational_measure && (
-                    <select name="socio_educational_measure_type" value={formData.socio_educational_measure_type} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900">
+                    <select name="socio_educational_measure_type" value={formData.socio_educational_measure_type} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing}>
                         <option value="">Selecione a medida...</option>
                         <option value="LA">Liberdade Assistida (LA)</option>
                         <option value="PSC">Prestação de Serviço Comunitário</option>
@@ -476,27 +1004,27 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
 
                  <div className="flex items-center gap-4">
                     <span className="text-sm font-bold text-gray-900 w-64">Ameaça de morte pós-acolhimento:</span>
-                    <label><input type="radio" name="death_threats" checked={formData.death_threats} onChange={() => setFormData(p => ({...p, death_threats: true}))} /> Sim</label>
-                    <label><input type="radio" name="death_threats" checked={!formData.death_threats} onChange={() => setFormData(p => ({...p, death_threats: false}))} /> Não</label>
+                    <label><input type="radio" name="death_threats" checked={formData.death_threats} onChange={() => setFormData(p => ({...p, death_threats: true}))} disabled={!isEditing} /> Sim</label>
+                    <label><input type="radio" name="death_threats" checked={!formData.death_threats} onChange={() => setFormData(p => ({...p, death_threats: false}))} disabled={!isEditing} /> Não</label>
                  </div>
 
                  <div className="flex items-center gap-4">
                     <span className="text-sm font-bold text-gray-900 w-64">Avaliado pelo PPCAAM:</span>
-                    <label><input type="radio" name="ppcaam_evaluated" checked={formData.ppcaam_evaluated} onChange={() => setFormData(p => ({...p, ppcaam_evaluated: true}))} /> Sim</label>
-                    <label><input type="radio" name="ppcaam_evaluated" checked={!formData.ppcaam_evaluated} onChange={() => setFormData(p => ({...p, ppcaam_evaluated: false}))} /> Não</label>
+                    <label><input type="radio" name="ppcaam_evaluated" checked={formData.ppcaam_evaluated} onChange={() => setFormData(p => ({...p, ppcaam_evaluated: true}))} disabled={!isEditing} /> Sim</label>
+                    <label><input type="radio" name="ppcaam_evaluated" checked={!formData.ppcaam_evaluated} onChange={() => setFormData(p => ({...p, ppcaam_evaluated: false}))} disabled={!isEditing} /> Não</label>
                  </div>
 
                  <div className="flex items-center gap-4">
                     <span className="text-sm font-bold text-gray-900 w-64">Inserido no PPCAAM:</span>
-                    <label><input type="radio" name="ppcaam_inserted" checked={formData.ppcaam_inserted} onChange={() => setFormData(p => ({...p, ppcaam_inserted: true}))} /> Sim</label>
-                    <label><input type="radio" name="ppcaam_inserted" checked={!formData.ppcaam_inserted} onChange={() => setFormData(p => ({...p, ppcaam_inserted: false}))} /> Não</label>
+                    <label><input type="radio" name="ppcaam_inserted" checked={formData.ppcaam_inserted} onChange={() => setFormData(p => ({...p, ppcaam_inserted: true}))} disabled={!isEditing} /> Sim</label>
+                    <label><input type="radio" name="ppcaam_inserted" checked={!formData.ppcaam_inserted} onChange={() => setFormData(p => ({...p, ppcaam_inserted: false}))} disabled={!isEditing} /> Não</label>
                  </div>
-                 <input type="text" name="ppcaam_justification" value={formData.ppcaam_justification} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Justifique (PPCAAM)" />
+                 <input type="text" name="ppcaam_justification" value={formData.ppcaam_justification} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Justifique (PPCAAM)" disabled={!isEditing} />
 
                  <div className="flex items-center gap-4">
                     <span className="text-sm font-bold text-gray-900 w-64">Vivência em situação de rua:</span>
-                    <label><input type="radio" name="street_situation" checked={formData.street_situation} onChange={() => setFormData(p => ({...p, street_situation: true}))} /> Sim</label>
-                    <label><input type="radio" name="street_situation" checked={!formData.street_situation} onChange={() => setFormData(p => ({...p, street_situation: false}))} /> Não</label>
+                    <label><input type="radio" name="street_situation" checked={formData.street_situation} onChange={() => setFormData(p => ({...p, street_situation: true}))} disabled={!isEditing} /> Sim</label>
+                    <label><input type="radio" name="street_situation" checked={!formData.street_situation} onChange={() => setFormData(p => ({...p, street_situation: false}))} disabled={!isEditing} /> Não</label>
                  </div>
             </div>
         </section>
@@ -507,7 +1035,7 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
              <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                     <label className="block text-sm font-bold text-gray-900">Raça/Cor</label>
-                    <select name="race_color" value={formData.race_color} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900">
+                    <select name="race_color" value={formData.race_color} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing}>
                         <option value="">Selecione...</option>
                         <option value="Branca">Branca</option>
                         <option value="Negra">Negra</option>
@@ -518,7 +1046,7 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                 </div>
                 <div>
                     <label className="block text-sm font-bold text-gray-900">Cor Cabelo</label>
-                    <select name="hair_color" value={formData.hair_color} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900">
+                    <select name="hair_color" value={formData.hair_color} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing}>
                         <option value="">Selecione...</option>
                         <option value="Preto">Preto</option>
                         <option value="Castanho Escuro">Castanho Escuro</option>
@@ -532,7 +1060,7 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                 </div>
                 <div>
                     <label className="block text-sm font-bold text-gray-900">Cor Olhos</label>
-                    <select name="eye_color" value={formData.eye_color} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900">
+                    <select name="eye_color" value={formData.eye_color} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing}>
                         <option value="">Selecione...</option>
                         <option value="Castanho">Castanho</option>
                         <option value="Preto">Preto</option>
@@ -544,7 +1072,7 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                 </div>
                 <div className="md:col-span-3">
                     <label className="block text-sm font-bold text-gray-900">Outros (Cicatrizes, Tatuagens)</label>
-                    <input type="text" name="physical_others" value={formData.physical_others} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" />
+                    <input type="text" name="physical_others" value={formData.physical_others} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing} />
                 </div>
              </div>
         </section>
@@ -556,9 +1084,9 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                 <div className="mb-4">
                     <label className="block text-sm font-bold text-gray-900 mb-1">Tipo de Família</label>
                     <div className="flex gap-4">
-                        <label><input type="radio" name="family_type" value="Biológica" checked={formData.family_type === 'Biológica'} onChange={handleChange} /> Biológica</label>
-                        <label><input type="radio" name="family_type" value="Substituta" checked={formData.family_type === 'Substituta'} onChange={handleChange} /> Substituta</label>
-                        <label><input type="radio" name="family_type" value="Extensa" checked={formData.family_type === 'Extensa'} onChange={handleChange} /> Extensa</label>
+                        <label><input type="radio" name="family_type" value="Biológica" checked={formData.family_type === 'Biológica'} onChange={handleChange} disabled={!isEditing} /> Biológica</label>
+                        <label><input type="radio" name="family_type" value="Substituta" checked={formData.family_type === 'Substituta'} onChange={handleChange} disabled={!isEditing} /> Substituta</label>
+                        <label><input type="radio" name="family_type" value="Extensa" checked={formData.family_type === 'Extensa'} onChange={handleChange} disabled={!isEditing} /> Extensa</label>
                     </div>
                 </div>
                 
@@ -579,24 +1107,24 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                         <tbody className="bg-white divide-y divide-gray-200">
                             {formData.family_composition?.map((member, idx) => (
                                 <tr key={idx} className="border-b border-gray-200 divide-x divide-gray-200">
-                                    <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={member.name} onChange={e => updateFamilyMember(idx, 'name', e.target.value)} /></td>
-                                    <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={member.kinship} onChange={e => updateFamilyMember(idx, 'kinship', e.target.value)} /></td>
-                                    <td className="p-1"><input type="date" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={member.birth_date} onChange={e => updateFamilyMember(idx, 'birth_date', e.target.value)} /></td>
-                                    <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={member.education_level} onChange={e => updateFamilyMember(idx, 'education_level', e.target.value)} /></td>
-                                    <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={member.occupation} onChange={e => updateFamilyMember(idx, 'occupation', e.target.value)} /></td>
-                                    <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={member.income} onChange={e => updateFamilyMember(idx, 'income', e.target.value)} placeholder="R$ 0,00" /></td>
-                                    <td className="p-1"><button type="button" onClick={() => removeFamilyMember(idx)} className="text-red-500"><Trash2 size={16} /></button></td>
+                                    <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={member.name} onChange={e => updateFamilyMember(idx, 'name', e.target.value)} disabled={!isEditing} /></td>
+                                    <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={member.kinship} onChange={e => updateFamilyMember(idx, 'kinship', e.target.value)} disabled={!isEditing} /></td>
+                                    <td className="p-1"><input type="date" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={member.birth_date} onChange={e => updateFamilyMember(idx, 'birth_date', e.target.value)} disabled={!isEditing} /></td>
+                                    <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={member.education_level} onChange={e => updateFamilyMember(idx, 'education_level', e.target.value)} disabled={!isEditing} /></td>
+                                    <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={member.occupation} onChange={e => updateFamilyMember(idx, 'occupation', e.target.value)} disabled={!isEditing} /></td>
+                                    <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={member.income} onChange={e => updateFamilyMember(idx, 'income', e.target.value)} placeholder="R$ 0,00" disabled={!isEditing} /></td>
+                                    <td className="p-1 text-center">{isEditing && <button type="button" onClick={() => removeFamilyMember(idx)} className="text-red-500"><Trash2 size={16} /></button>}</td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
-                    <button type="button" onClick={addFamilyMember} className="mt-2 text-sm text-gov-700 font-medium flex items-center"><Plus size={16} className="mr-1"/> Adicionar Familiar</button>
+                    {isEditing && <button type="button" onClick={addFamilyMember} className="mt-2 text-sm text-gov-700 font-medium flex items-center"><Plus size={16} className="mr-1"/> Adicionar Familiar</button>}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
                         <label className="block text-sm font-bold text-gray-900">Responsável Familiar</label>
-                        <select name="responsible_family" value={formData.responsible_family} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900">
+                        <select name="responsible_family" value={formData.responsible_family} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing}>
                             <option value="">Selecione...</option>
                             <option value="Pai e Mãe">Pai e Mãe</option>
                             <option value="Mãe">Mãe</option>
@@ -608,13 +1136,36 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                     <div>
                          <div className="flex items-center gap-4 mt-6">
                             <span className="text-sm font-bold text-gray-900">Irmãos em acolhimento?</span>
-                            <label><input type="radio" name="siblings_in_care" checked={formData.siblings_in_care} onChange={() => setFormData(p => ({...p, siblings_in_care: true}))} /> Sim</label>
-                            <label><input type="radio" name="siblings_in_care" checked={!formData.siblings_in_care} onChange={() => setFormData(p => ({...p, siblings_in_care: false}))} /> Não</label>
+                            <label><input type="radio" name="siblings_in_care" checked={formData.siblings_in_care} onChange={() => setFormData(p => ({...p, siblings_in_care: true}))} disabled={!isEditing} /> Sim</label>
+                            <label><input type="radio" name="siblings_in_care" checked={!formData.siblings_in_care} onChange={() => setFormData(p => ({...p, siblings_in_care: false}))} disabled={!isEditing} /> Não</label>
                          </div>
                     </div>
                     {formData.siblings_in_care && (
                         <div className="md:col-span-2">
-                             <input type="text" name="siblings_details" value={formData.siblings_details} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Nome e local de acolhimento dos irmãos" />
+                             <label className="block text-sm font-bold text-gray-900 mb-2">Detalhes dos Irmãos</label>
+                             <div className="overflow-x-auto mb-2">
+                                <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-md">
+                                    <thead className="bg-gray-50 border-b border-gray-200">
+                                        <tr className="divide-x divide-gray-200">
+                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Nome</th>
+                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Local de Acolhimento</th>
+                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Data</th>
+                                            <th className="px-3 py-2"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-gray-200">
+                                        {formData.siblings_details?.map((sibling, idx) => (
+                                            <tr key={idx} className="border-b border-gray-200 divide-x divide-gray-200">
+                                                <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={sibling.name} onChange={e => updateSibling(idx, 'name', e.target.value)} placeholder="Nome" disabled={!isEditing} /></td>
+                                                <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={sibling.location} onChange={e => updateSibling(idx, 'location', e.target.value)} placeholder="Local" disabled={!isEditing} /></td>
+                                                <td className="p-1"><input type="date" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={sibling.date} onChange={e => updateSibling(idx, 'date', e.target.value)} disabled={!isEditing} /></td>
+                                                <td className="p-1 text-center">{isEditing && <button type="button" onClick={() => removeSibling(idx)} className="text-red-500 hover:text-red-700"><Trash2 size={16} /></button>}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                             </div>
+                             {isEditing && <button type="button" onClick={addSibling} className="text-sm text-gov-700 font-medium flex items-center"><Plus size={16} className="mr-1"/> Adicionar Irmão</button>}
                         </div>
                     )}
                 </div>
@@ -623,7 +1174,7 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                          <label className="block text-sm font-bold text-gray-900">Moradia</label>
-                         <select name="housing_condition" value={formData.housing_condition} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900">
+                         <select name="housing_condition" value={formData.housing_condition} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing}>
                              <option value="">Selecione...</option>
                              <option value="Própria">Própria</option>
                              <option value="Alugada">Alugada</option>
@@ -633,7 +1184,7 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                     </div>
                     <div>
                          <label className="block text-sm font-bold text-gray-900">Construção</label>
-                         <select name="construction_type" value={formData.construction_type} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900">
+                         <select name="construction_type" value={formData.construction_type} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing}>
                              <option value="">Selecione...</option>
                              <option value="Alvenaria">Alvenaria</option>
                              <option value="Madeira">Madeira</option>
@@ -642,20 +1193,38 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                          </select>
                     </div>
                     <div className="md:col-span-2 flex gap-6">
-                        <label className="flex items-center"><input type="checkbox" checked={formData.housing_water} onChange={(e) => setFormData(p => ({...p, housing_water: e.target.checked}))} className="mr-2" /> Água</label>
-                        <label className="flex items-center"><input type="checkbox" checked={formData.housing_sewage} onChange={(e) => setFormData(p => ({...p, housing_sewage: e.target.checked}))} className="mr-2" /> Esgoto</label>
-                        <label className="flex items-center"><input type="checkbox" checked={formData.housing_light} onChange={(e) => setFormData(p => ({...p, housing_light: e.target.checked}))} className="mr-2" /> Luz</label>
+                        <label className="flex items-center"><input type="checkbox" checked={formData.housing_water} onChange={(e) => setFormData(p => ({...p, housing_water: e.target.checked}))} className="mr-2" disabled={!isEditing} /> Água</label>
+                        <label className="flex items-center"><input type="checkbox" checked={formData.housing_sewage} onChange={(e) => setFormData(p => ({...p, housing_sewage: e.target.checked}))} className="mr-2" disabled={!isEditing} /> Esgoto</label>
+                        <label className="flex items-center"><input type="checkbox" checked={formData.housing_light} onChange={(e) => setFormData(p => ({...p, housing_light: e.target.checked}))} className="mr-2" disabled={!isEditing} /> Luz</label>
                     </div>
 
                     <div className="md:col-span-2 mt-2">
                         <label className="block text-sm font-bold text-gray-900">Recebe visitas de:</label>
-                        <div className="flex gap-4 flex-wrap">
-                            {['Pais', 'Mãe', 'Pai', 'Irmãos', 'Parentes', 'Outros'].map(v => (
-                                <label key={v} className="flex items-center text-sm"><input type="checkbox" checked={formData.visits_received?.includes(v)} onChange={(e) => handleCheckboxGroup('visits_received', v, e.target.checked)} className="mr-1" /> {v}</label>
-                            ))}
-                        </div>
+                        <label className="flex items-center text-sm font-bold text-gray-900 mb-2">
+                            <input 
+                                type="checkbox" 
+                                checked={formData.visits_received?.includes('Não ocorrem')} 
+                                onChange={(e) => {
+                                    if (e.target.checked) {
+                                        setFormData(prev => ({ ...prev, visits_received: ['Não ocorrem'] }));
+                                    } else {
+                                        setFormData(prev => ({ ...prev, visits_received: [] }));
+                                    }
+                                }} 
+                                className="mr-2" 
+                                disabled={!isEditing}
+                            /> 
+                            Não ocorrem
+                        </label>
+                        {!formData.visits_received?.includes('Não ocorrem') && (
+                            <div className="flex gap-4 flex-wrap">
+                                {['Pais', 'Mãe', 'Pai', 'Irmãos', 'Parentes', 'Outros'].map(v => (
+                                    <label key={v} className="flex items-center text-sm"><input type="checkbox" checked={formData.visits_received?.includes(v)} onChange={(e) => handleCheckboxGroup('visits_received', v, e.target.checked)} className="mr-1" disabled={!isEditing} /> {v}</label>
+                                ))}
+                            </div>
+                        )}
                         <label className="block text-sm font-bold text-gray-900 mt-2">Frequência das Visitas</label>
-                        <select name="visits_frequency" value={formData.visits_frequency} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900">
+                        <select name="visits_frequency" value={formData.visits_frequency} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing}>
                             <option value="">Selecione...</option>
                             <option value="Semanal">Semanal</option>
                             <option value="Quinzenal">Quinzenal</option>
@@ -670,13 +1239,13 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                     <div>
                         <label className="block text-sm font-bold text-gray-900">Vínculo preservado?</label>
                         <div className="flex gap-4">
-                           <label><input type="radio" name="family_bond_exists" checked={formData.family_bond_exists} onChange={() => setFormData(p => ({...p, family_bond_exists: true}))} /> Sim</label>
-                           <label><input type="radio" name="family_bond_exists" checked={!formData.family_bond_exists} onChange={() => setFormData(p => ({...p, family_bond_exists: false}))} /> Não</label>
+                           <label><input type="radio" name="family_bond_exists" checked={formData.family_bond_exists} onChange={() => setFormData(p => ({...p, family_bond_exists: true}))} disabled={!isEditing} /> Sim</label>
+                           <label><input type="radio" name="family_bond_exists" checked={!formData.family_bond_exists} onChange={() => setFormData(p => ({...p, family_bond_exists: false}))} disabled={!isEditing} /> Não</label>
                         </div>
                     </div>
                     <div>
                          <label className="block text-sm font-bold text-gray-900">Destituído poder familiar?</label>
-                         <select name="destituted_power" value={formData.destituted_power} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900">
+                         <select name="destituted_power" value={formData.destituted_power} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing}>
                              <option value="">Selecione...</option>
                              <option value="Sim">Sim</option>
                              <option value="Não">Não</option>
@@ -687,10 +1256,10 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                 
                 <h4 className="font-bold text-gray-700 mb-2 border-b pb-1 pt-4">5.4 Rede Socioassistencial</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                     <input type="text" name="cras_monitoring" value={formData.cras_monitoring} onChange={handleChange} className="border-gray-300 rounded-md border p-2 text-gray-900" placeholder="CRAS (Qual?)" />
-                     <input type="text" name="creas_monitoring" value={formData.creas_monitoring} onChange={handleChange} className="border-gray-300 rounded-md border p-2 text-gray-900" placeholder="CREAS (Qual?)" />
-                     <input type="text" name="health_unit_monitoring" value={formData.health_unit_monitoring} onChange={handleChange} className="border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Unidade Saúde (Qual?)" />
-                     <input type="text" name="referrals" value={formData.referrals} onChange={handleChange} className="border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Encaminhamentos" />
+                     <input type="text" name="cras_monitoring" value={formData.cras_monitoring} onChange={handleChange} className="border-gray-300 rounded-md border p-2 text-gray-900" placeholder="CRAS (Qual?)" disabled={!isEditing} />
+                     <input type="text" name="creas_monitoring" value={formData.creas_monitoring} onChange={handleChange} className="border-gray-300 rounded-md border p-2 text-gray-900" placeholder="CREAS (Qual?)" disabled={!isEditing} />
+                     <input type="text" name="health_unit_monitoring" value={formData.health_unit_monitoring} onChange={handleChange} className="border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Unidade Saúde (Qual?)" disabled={!isEditing} />
+                     <input type="text" name="referrals" value={formData.referrals} onChange={handleChange} className="border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Encaminhamentos" disabled={!isEditing} />
                 </div>
              </div>
         </section>
@@ -715,6 +1284,7 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                                     }
                                 }} 
                                 className="mr-2" 
+                                disabled={!isEditing}
                             /> 
                             Possui deficiência
                         </label>
@@ -723,7 +1293,7 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                     {hasDisability && (
                         <div className="flex gap-4 flex-wrap transition-opacity duration-200">
                         {['Mental', 'Visual', 'Auditiva', 'Física', 'Down'].map(d => (
-                             <label key={d} className="flex items-center text-sm"><input type="checkbox" checked={formData.disabilities?.includes(d)} onChange={(e) => handleCheckboxGroup('disabilities', d, e.target.checked)} className="mr-1" /> {d}</label>
+                             <label key={d} className="flex items-center text-sm"><input type="checkbox" checked={formData.disabilities?.includes(d)} onChange={(e) => handleCheckboxGroup('disabilities', d, e.target.checked)} className="mr-1" disabled={!isEditing} /> {d}</label>
                         ))}
                         </div>
                     )}
@@ -731,11 +1301,11 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
                         <label className="block text-sm font-bold text-gray-900">CID</label>
-                        <input type="text" name="cid" value={formData.cid} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" />
+                        <input type="text" name="cid" value={formData.cid} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing} />
                     </div>
                     <div>
                          <label className="block text-sm font-bold text-gray-900">Acompanhamento de saúde</label>
-                         <input type="text" name="health_followup" value={formData.health_followup} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" />
+                         <input type="text" name="health_followup" value={formData.health_followup} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing} />
                     </div>
                  </div>
 
@@ -754,16 +1324,16 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                         <tbody className="bg-white divide-y divide-gray-200">
                             {formData.health_treatments?.map((t, idx) => (
                                 <tr key={idx} className="border-b border-gray-200 divide-x divide-gray-200">
-                                    <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={t.treatment} onChange={e => updateTreatment(idx, 'treatment', e.target.value)} /></td>
-                                    <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={t.local} onChange={e => updateTreatment(idx, 'local', e.target.value)} /></td>
-                                    <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={t.frequency} onChange={e => updateTreatment(idx, 'frequency', e.target.value)} /></td>
-                                    <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={t.medication} onChange={e => updateTreatment(idx, 'medication', e.target.value)} /></td>
-                                    <td className="p-1"><button type="button" onClick={() => removeTreatment(idx)} className="text-red-500"><Trash2 size={16} /></button></td>
+                                    <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={t.treatment} onChange={e => updateTreatment(idx, 'treatment', e.target.value)} disabled={!isEditing} /></td>
+                                    <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={t.local} onChange={e => updateTreatment(idx, 'local', e.target.value)} disabled={!isEditing} /></td>
+                                    <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={t.frequency} onChange={e => updateTreatment(idx, 'frequency', e.target.value)} disabled={!isEditing} /></td>
+                                    <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={t.medication} onChange={e => updateTreatment(idx, 'medication', e.target.value)} disabled={!isEditing} /></td>
+                                    <td className="p-1 text-center">{isEditing && <button type="button" onClick={() => removeTreatment(idx)} className="text-red-500"><Trash2 size={16} /></button>}</td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
-                    <button type="button" onClick={addTreatment} className="mt-2 text-sm text-gov-700 font-medium flex items-center"><Plus size={16} className="mr-1"/> Adicionar Tratamento</button>
+                    {isEditing && <button type="button" onClick={addTreatment} className="mt-2 text-sm text-gov-700 font-medium flex items-center"><Plus size={16} className="mr-1"/> Adicionar Tratamento</button>}
                 </div>
                 
                 <div className="border-t pt-4">
@@ -774,6 +1344,7 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                             checked={!formData.chemical_dependency} 
                             onChange={(e) => setFormData(p => ({...p, chemical_dependency: !e.target.checked}))} 
                             className="mr-2" 
+                            disabled={!isEditing}
                         /> 
                         Não possui dependência química
                     </label>
@@ -783,11 +1354,11 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                              <span className="text-sm font-bold text-gray-700">Drogas Utilizadas:</span>
                              <div className="flex gap-4 flex-wrap mt-1">
                                 {['Álcool', 'Tabaco', 'Cocaína', 'Crack', 'Maconha', 'Inalantes'].map(d => (
-                                     <label key={d} className="flex items-center text-sm"><input type="checkbox" checked={formData.drugs_used?.includes(d)} onChange={(e) => handleCheckboxGroup('drugs_used', d, e.target.checked)} className="mr-1" /> {d}</label>
+                                     <label key={d} className="flex items-center text-sm"><input type="checkbox" checked={formData.drugs_used?.includes(d)} onChange={(e) => handleCheckboxGroup('drugs_used', d, e.target.checked)} className="mr-1" disabled={!isEditing} /> {d}</label>
                                 ))}
                              </div>
                              <div className="mt-2">
-                                <label className="flex items-center text-sm text-gray-900"><input type="checkbox" checked={formData.dependency_treatment} onChange={(e) => setFormData(p => ({...p, dependency_treatment: e.target.checked}))} className="mr-2" /> Realiza tratamento?</label>
+                                <label className="flex items-center text-sm text-gray-900"><input type="checkbox" checked={formData.dependency_treatment} onChange={(e) => setFormData(p => ({...p, dependency_treatment: e.target.checked}))} className="mr-2" disabled={!isEditing} /> Realiza tratamento?</label>
                              </div>
                          </div>
                     )}
@@ -800,13 +1371,13 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
             <section className="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden">
                 <div className="bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800">7. SITUAÇÃO EDUCACIONAL</div>
                 <div className="p-6 space-y-4">
-                     <select name="school_status" value={formData.school_status} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900">
+                     <select name="school_status" value={formData.school_status} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing}>
                          <option value="">Situação Escolar...</option>
                          <option value="Estuda atualmente">Estuda atualmente</option>
                          <option value="Não estuda">Não estuda</option>
                          <option value="Nunca estudou">Nunca estudou</option>
                      </select>
-                     <select name="education_level" value={formData.education_level} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900">
+                     <select name="education_level" value={formData.education_level} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing}>
                          <option value="">Nível...</option>
                          <option value="Infantil">Educação Infantil</option>
                          <option value="Fundamental">Ens. Fundamental</option>
@@ -814,8 +1385,8 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                          <option value="EJA">EJA</option>
                          <option value="Especial">Especial</option>
                      </select>
-                     <input type="text" name="school_name" value={formData.school_name} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Nome Escola" />
-                     <input type="text" name="school_phone" value={formData.school_phone} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Telefone" />
+                     <input type="text" name="school_name" value={formData.school_name} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Nome Escola" disabled={!isEditing} />
+                     <input type="text" name="school_phone" value={formData.school_phone} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Telefone" disabled={!isEditing} />
                 </div>
             </section>
 
@@ -823,12 +1394,12 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                 <div className="bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800">8. TRABALHO / PROFISSIONALIZAÇÃO</div>
                 <div className="p-6">
                      <label className="block text-sm font-bold text-gray-900 mb-2">Inserção no Mundo do Trabalho</label>
-                     <select name="work_insertion" value={formData.work_insertion} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900">
+                     <select name="work_insertion" value={formData.work_insertion} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing}>
                          <option value="Não se aplica">Não se aplica</option>
                          <option value="Sim">Sim (Especifique abaixo)</option>
                      </select>
                      {formData.work_insertion === 'Sim' && (
-                         <input type="text" name="work_insertion_details" className="mt-2 w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Qual?" />
+                         <input type="text" name="work_insertion_details" className="mt-2 w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Qual?" disabled={!isEditing} />
                      )}
                 </div>
             </section>
@@ -840,15 +1411,15 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
              <div className="p-6 space-y-4">
                  <div>
                     <label className="block text-sm font-bold text-gray-900">9. Esporte e Lazer</label>
-                    <textarea name="sports_leisure" value={formData.sports_leisure} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" rows={2} />
+                    <textarea name="sports_leisure" value={formData.sports_leisure} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" rows={2} disabled={!isEditing} />
                  </div>
                  <div>
                     <label className="block text-sm font-bold text-gray-900">10. Contexto Histórico</label>
-                    <textarea name="historical_context" value={formData.historical_context} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" rows={3} />
+                    <textarea name="historical_context" value={formData.historical_context} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" rows={3} disabled={!isEditing} />
                  </div>
                  <div>
                     <label className="block text-sm font-bold text-gray-900">11. Situação Atual</label>
-                    <textarea name="current_situation" value={formData.current_situation} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" rows={3} />
+                    <textarea name="current_situation" value={formData.current_situation} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" rows={3} disabled={!isEditing} />
                  </div>
                  
                  <div>
@@ -868,39 +1439,59 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {formData.commitments?.map((c, idx) => (
                                     <tr key={idx} className="border-b border-gray-200 divide-x divide-gray-200">
-                                        <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={c.commitment} onChange={e => updateCommitment(idx, 'commitment', e.target.value)} /></td>
-                                        <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={c.responsible} onChange={e => updateCommitment(idx, 'responsible', e.target.value)} /></td>
-                                        <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={c.network} onChange={e => updateCommitment(idx, 'network', e.target.value)} /></td>
-                                        <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={c.deadline} onChange={e => updateCommitment(idx, 'deadline', e.target.value)} /></td>
-                                        <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={c.expected_results} onChange={e => updateCommitment(idx, 'expected_results', e.target.value)} /></td>
-                                        <td className="p-1"><button type="button" onClick={() => removeCommitment(idx)} className="text-red-500"><Trash2 size={16} /></button></td>
+                                        <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={c.commitment} onChange={e => updateCommitment(idx, 'commitment', e.target.value)} disabled={!isEditing} /></td>
+                                        <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={c.responsible} onChange={e => updateCommitment(idx, 'responsible', e.target.value)} disabled={!isEditing} /></td>
+                                        <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={c.network} onChange={e => updateCommitment(idx, 'network', e.target.value)} disabled={!isEditing} /></td>
+                                        <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={c.deadline} onChange={e => updateCommitment(idx, 'deadline', e.target.value)} disabled={!isEditing} /></td>
+                                        <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={c.expected_results} onChange={e => updateCommitment(idx, 'expected_results', e.target.value)} disabled={!isEditing} /></td>
+                                        <td className="p-1 text-center">{isEditing && <button type="button" onClick={() => removeCommitment(idx)} className="text-red-500"><Trash2 size={16} /></button>}</td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
-                        <button type="button" onClick={addCommitment} className="mt-2 text-sm text-gov-700 font-medium flex items-center"><Plus size={16} className="mr-1"/> Adicionar Compromisso</button>
+                        {isEditing && <button type="button" onClick={addCommitment} className="mt-2 text-sm text-gov-700 font-medium flex items-center"><Plus size={16} className="mr-1"/> Adicionar Compromisso</button>}
                     </div>
                  </div>
 
                  <div>
                     <label className="block text-sm font-bold text-gray-900">13. Considerações Finais</label>
-                    <textarea name="final_considerations" value={formData.final_considerations} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" rows={3} />
+                    <textarea name="final_considerations" value={formData.final_considerations} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" rows={3} disabled={!isEditing} />
                  </div>
              </div>
         </section>
 
-        <div className="flex justify-end pt-4 gap-3 sticky bottom-0 bg-gray-50 p-4 border-t border-gray-200 shadow-inner">
-          <button type="button" onClick={() => navigate('/')} className="bg-white py-2 px-6 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gov-600">
-            Cancelar
-          </button>
-          <button type="submit" onClick={() => (submitAction.current = 'draft')} formNoValidate disabled={isSubmitting} className="bg-white py-2 px-6 border border-gov-600 rounded-md shadow-sm text-sm font-medium text-gov-700 hover:bg-gov-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gov-600 disabled:opacity-50 inline-flex items-center">
-            <FileText className="w-4 h-4 mr-2" /> Salvar Rascunho
-          </button>
-          <button type="submit" onClick={() => (submitAction.current = 'completed')} disabled={isSubmitting} className="inline-flex justify-center py-2 px-6 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-gov-700 hover:bg-gov-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gov-600 disabled:opacity-50">
-            {isSubmitting ? 'Salvando...' : <><Save className="w-4 h-4 mr-2" /> Salvar Completo</>}
-          </button>
+        <div className="flex justify-end pt-4 gap-3 sticky bottom-0 bg-gray-50 p-4 border-t border-gray-200 shadow-inner print:hidden">
+          {!isEditing ? (
+            <>
+              <button type="button" onClick={() => navigate('/')} className="bg-white py-2 px-6 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gov-600">
+                Voltar
+              </button>
+              <button type="button" onClick={(e) => {
+                e.preventDefault();
+                setIsEditing(true);
+              }} className="inline-flex justify-center py-2 px-6 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-gov-700 hover:bg-gov-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gov-600">
+                <Edit className="w-4 h-4 mr-2" /> Alterar
+              </button>
+              <button type="button" onClick={generatePDF} disabled={isGeneratingPDF} className="ml-3 inline-flex justify-center py-2 px-6 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gov-600 disabled:opacity-50">
+                {isGeneratingPDF ? 'Gerando...' : <><Printer className="w-4 h-4 mr-2" /> Baixar PDF</>}
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={() => { setIsEditing(false); if(id) fetchChildData(id); }} className="bg-white py-2 px-6 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gov-600">
+                Cancelar
+              </button>
+              <button type="submit" onClick={() => (submitAction.current = 'draft')} formNoValidate disabled={isSubmitting} className="bg-white py-2 px-6 border border-gov-600 rounded-md shadow-sm text-sm font-medium text-gov-700 hover:bg-gov-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gov-600 disabled:opacity-50 inline-flex items-center">
+                <FileText className="w-4 h-4 mr-2" /> Salvar Rascunho
+              </button>
+              <button type="submit" onClick={() => (submitAction.current = 'completed')} disabled={isSubmitting} className="inline-flex justify-center py-2 px-6 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-gov-700 hover:bg-gov-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gov-600 disabled:opacity-50">
+                {isSubmitting ? 'Salvando...' : <><Save className="w-4 h-4 mr-2" /> Salvar Completo</>}
+              </button>
+            </>
+          )}
         </div>
       </form>
+      </div>
     </div>
   );
 };

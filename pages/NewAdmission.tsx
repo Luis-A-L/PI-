@@ -1,9 +1,9 @@
 import React, { useState, useRef } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, AlertTriangle, Plus, Trash2, FileText } from 'lucide-react';
+import { ArrowLeft, Save, AlertTriangle, Plus, Trash2, FileText, Camera, User } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { Child, FamilyMember, HealthTreatment, Commitment, ReferenceContact } from '../types';
+import { Child, FamilyMember, HealthTreatment, Commitment, ReferenceContact, PreviousAdmission, SiblingInCare } from '../types';
 
 interface NewAdmissionProps {
   isDemo?: boolean;
@@ -15,6 +15,8 @@ const NewAdmission: React.FC<NewAdmissionProps> = ({ isDemo }) => {
   const [error, setError] = useState<string | null>(null);
   const [hasDisability, setHasDisability] = useState(false);
   const submitAction = useRef<'draft' | 'completed'>('completed');
+  const [selectedPhoto, setSelectedPhoto] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   
   // Initial State Mapping
   const [formData, setFormData] = useState<Partial<Child>>({
@@ -25,11 +27,12 @@ const NewAdmission: React.FC<NewAdmissionProps> = ({ isDemo }) => {
     entry_date: new Date().toISOString().split('T')[0], transferred_from: '', transferred_date: '', responsible_organ: '',
     cnj_guide: '', reference_professional: '', fas_guide: '',
     admission_reason_types: [], admission_reason_other: '', guardianship_council: '', counselor_name: '',
-    previous_admissions: false, previous_admissions_local: '',
+    previous_admissions: false, previous_admissions_local: '', previous_admissions_history: [],
     socio_educational_measure: false, socio_educational_measure_type: '', death_threats: false,
     ppcaam_evaluated: false, ppcaam_inserted: false, ppcaam_justification: '', street_situation: false,
     race_color: '', hair_color: '', eye_color: '', physical_others: '',
     family_type: '', family_composition: [], responsible_family: '', siblings_in_care: false, siblings_details: '',
+    family_type: '', family_composition: [], responsible_family: '', siblings_in_care: false, siblings_details: [],
     housing_condition: '', construction_type: '', housing_water: true, housing_sewage: true, housing_light: true,
     visits_received: [], visits_frequency: '', return_perspective: '', family_bond_exists: false, weekend_with_family: false, destituted_power: '',
     cras_monitoring: '', creas_monitoring: '', health_unit_monitoring: '', protection_network_monitoring: '', mandatory_notifications: false, referrals: '',
@@ -102,6 +105,36 @@ const NewAdmission: React.FC<NewAdmissionProps> = ({ isDemo }) => {
     setFormData(prev => ({ ...prev, commitments: newItems }));
   };
 
+  const addPreviousAdmission = () => {
+    const item: PreviousAdmission = { institution_name: '', entry_date: '', exit_date: '', motive: '' };
+    setFormData(prev => ({ ...prev, previous_admissions_history: [...(prev.previous_admissions_history || []), item] }));
+  };
+
+  const removePreviousAdmission = (index: number) => {
+    setFormData(prev => ({ ...prev, previous_admissions_history: prev.previous_admissions_history?.filter((_, i) => i !== index) }));
+  };
+
+  const updatePreviousAdmission = (index: number, field: keyof PreviousAdmission, value: string) => {
+    const newItems = [...(formData.previous_admissions_history || [])];
+    newItems[index] = { ...newItems[index], [field]: value };
+    setFormData(prev => ({ ...prev, previous_admissions_history: newItems }));
+  };
+
+  const addSibling = () => {
+    const item: SiblingInCare = { name: '', location: '', date: '' };
+    setFormData(prev => ({ ...prev, siblings_details: [...(prev.siblings_details || []), item] }));
+  };
+
+  const removeSibling = (index: number) => {
+    setFormData(prev => ({ ...prev, siblings_details: prev.siblings_details?.filter((_, i) => i !== index) }));
+  };
+
+  const updateSibling = (index: number, field: keyof SiblingInCare, value: string) => {
+    const newItems = [...(formData.siblings_details || [])];
+    newItems[index] = { ...newItems[index], [field]: value };
+    setFormData(prev => ({ ...prev, siblings_details: newItems }));
+  };
+
   // General Handler
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
@@ -125,6 +158,14 @@ const NewAdmission: React.FC<NewAdmissionProps> = ({ isDemo }) => {
 
   const varaOptions = ['Foro Central', 'CIC', 'S. Felicidade', 'Pinheirinho', 'Boqueirão', 'Bairro Novo'];
   const showVaraInput = formData.forum_vara === 'Outro' || (formData.forum_vara && !varaOptions.includes(formData.forum_vara));
+
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+        const file = e.target.files[0];
+        setSelectedPhoto(file);
+        setPhotoPreview(URL.createObjectURL(file));
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,11 +192,31 @@ const NewAdmission: React.FC<NewAdmissionProps> = ({ isDemo }) => {
           payload.transferred_date = null as any;
       }
 
-      const { error: insertError } = await supabase
+      const { data: newChild, error: insertError } = await supabase
         .from('children')
-        .insert([{ ...payload, institution_id: profile.institution_id }]);
+        .insert([{ ...payload, institution_id: profile.institution_id }])
+        .select()
+        .single();
 
       if (insertError) throw insertError;
+
+      if (selectedPhoto && newChild) {
+        try {
+          const fileExt = selectedPhoto.name.split('.').pop();
+          const fileName = `${newChild.id}/${Math.random()}.${fileExt}`;
+          const { error: uploadError } = await supabase.storage.from('child-photos').upload(fileName, selectedPhoto);
+          
+          if (!uploadError) {
+             const { data: publicUrlData } = supabase.storage.from('child-photos').getPublicUrl(fileName);
+             await supabase.from('child_photos').insert([
+                { child_id: newChild.id, url: publicUrlData.publicUrl }
+             ]);
+          }
+        } catch (photoErr) {
+           console.error("Erro ao salvar foto:", photoErr);
+        }
+      }
+
       navigate(submitAction.current === 'draft' ? '/' : '/');
     } catch (err: any) {
       console.error(err);
@@ -187,7 +248,23 @@ const NewAdmission: React.FC<NewAdmissionProps> = ({ isDemo }) => {
         {/* 1. IDENTIFICAÇÃO */}
         <section className="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden">
             <div className="bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800">1. IDENTIFICAÇÃO / DADOS PESSOAIS</div>
-            <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-6">
+                <div className="flex justify-center mb-8">
+                    <div className="relative group">
+                        <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-gray-200 bg-gray-100 flex items-center justify-center shadow-sm">
+                            {photoPreview ? (
+                                <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
+                            ) : (
+                                <User className="w-16 h-16 text-gray-400" />
+                            )}
+                        </div>
+                        <label className="absolute bottom-0 right-0 bg-gov-600 text-white p-2.5 rounded-full cursor-pointer hover:bg-gov-700 shadow-md transition-all transform hover:scale-105" title="Adicionar foto">
+                            <Camera size={20} />
+                            <input type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} />
+                        </label>
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-2">
                     <label className="block text-sm font-bold text-gray-900">Nome Completo</label>
                     <input type="text" name="full_name" value={formData.full_name} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900 focus:ring-gov-600 focus:border-gov-600" required />
@@ -288,6 +365,7 @@ const NewAdmission: React.FC<NewAdmissionProps> = ({ isDemo }) => {
                     </div>
                     <button type="button" onClick={addReferenceContact} className="text-sm text-gov-700 font-medium flex items-center"><Plus size={16} className="mr-1"/> Adicionar Contato</button>
                 </div>
+                </div>
             </div>
         </section>
 
@@ -309,6 +387,19 @@ const NewAdmission: React.FC<NewAdmissionProps> = ({ isDemo }) => {
                     </label>
                 </div>
 
+                {!formData.first_admission && (
+                <div className="md:col-span-2 mb-2">
+                    <div className="flex items-center space-x-4">
+                        <span className="text-sm font-bold text-gray-900">Acolhimentos Anteriores?</span>
+                        <label className="inline-flex items-center"><input type="radio" name="previous_admissions" checked={formData.previous_admissions === true} onChange={() => setFormData(p => ({...p, previous_admissions: true}))} className="mr-1"/> Sim</label>
+                        <label className="inline-flex items-center"><input type="radio" name="previous_admissions" checked={formData.previous_admissions === false} onChange={() => setFormData(p => ({...p, previous_admissions: false}))} className="mr-1"/> Não</label>
+                    </div>
+                    {formData.previous_admissions && (
+                        <input type="text" name="previous_admissions_local" value={formData.previous_admissions_local} onChange={handleChange} className="mt-1 w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Local" />
+                    )}
+                </div>
+                )}
+
                 <div>
                     <label className="block text-sm font-bold text-gray-900">Data Acolhimento</label>
                     <input type="date" name="entry_date" value={formData.entry_date} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" required />
@@ -328,6 +419,35 @@ const NewAdmission: React.FC<NewAdmissionProps> = ({ isDemo }) => {
                         <div>
                             <label className="block text-sm font-bold text-gray-900">Data Transferência</label>
                             <input type="date" name="transferred_date" value={formData.transferred_date} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" />
+                        </div>
+
+                        <div className="md:col-span-2 mt-4">
+                            <label className="block text-sm font-bold text-gray-900 mb-2">Histórico de Acolhimentos Anteriores</label>
+                            <div className="overflow-x-auto mb-2">
+                                <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-md">
+                                    <thead className="bg-gray-50 border-b border-gray-200">
+                                        <tr className="divide-x divide-gray-200">
+                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Instituição / Casa Lar</th>
+                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Data Entrada</th>
+                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Data Saída</th>
+                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Motivo Saída/Reingresso</th>
+                                            <th className="px-3 py-2"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-gray-200">
+                                        {formData.previous_admissions_history?.map((item, idx) => (
+                                            <tr key={idx} className="border-b border-gray-200 divide-x divide-gray-200">
+                                                <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={item.institution_name} onChange={e => updatePreviousAdmission(idx, 'institution_name', e.target.value)} placeholder="Nome do local" /></td>
+                                                <td className="p-1"><input type="date" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={item.entry_date} onChange={e => updatePreviousAdmission(idx, 'entry_date', e.target.value)} /></td>
+                                                <td className="p-1"><input type="date" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={item.exit_date} onChange={e => updatePreviousAdmission(idx, 'exit_date', e.target.value)} /></td>
+                                                <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={item.motive} onChange={e => updatePreviousAdmission(idx, 'motive', e.target.value)} placeholder="Motivo" /></td>
+                                                <td className="p-1 text-center"><button type="button" onClick={() => removePreviousAdmission(idx)} className="text-red-500 hover:text-red-700"><Trash2 size={16} /></button></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <button type="button" onClick={addPreviousAdmission} className="text-sm text-gov-700 font-medium flex items-center"><Plus size={16} className="mr-1"/> Adicionar Histórico</button>
                         </div>
                     </>
                 )}
@@ -367,17 +487,6 @@ const NewAdmission: React.FC<NewAdmissionProps> = ({ isDemo }) => {
                         <label className="block text-sm font-bold text-gray-900">Nome Conselheiro</label>
                         <input type="text" name="counselor_name" value={formData.counselor_name} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" />
                      </div>
-                </div>
-
-                <div className="md:col-span-2">
-                    <div className="flex items-center space-x-4">
-                        <span className="text-sm font-bold text-gray-900">Acolhimentos Anteriores?</span>
-                        <label className="inline-flex items-center"><input type="radio" name="previous_admissions" checked={formData.previous_admissions === true} onChange={() => setFormData(p => ({...p, previous_admissions: true}))} className="mr-1"/> Sim</label>
-                        <label className="inline-flex items-center"><input type="radio" name="previous_admissions" checked={formData.previous_admissions === false} onChange={() => setFormData(p => ({...p, previous_admissions: false}))} className="mr-1"/> Não</label>
-                    </div>
-                    {formData.previous_admissions && (
-                        <input type="text" name="previous_admissions_local" value={formData.previous_admissions_local} onChange={handleChange} className="mt-1 w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Local" />
-                    )}
                 </div>
             </div>
         </section>
@@ -539,7 +648,30 @@ const NewAdmission: React.FC<NewAdmissionProps> = ({ isDemo }) => {
                     </div>
                     {formData.siblings_in_care && (
                         <div className="md:col-span-2">
-                             <input type="text" name="siblings_details" value={formData.siblings_details} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Nome e local de acolhimento dos irmãos" />
+                             <label className="block text-sm font-bold text-gray-900 mb-2">Detalhes dos Irmãos</label>
+                             <div className="overflow-x-auto mb-2">
+                                <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-md">
+                                    <thead className="bg-gray-50 border-b border-gray-200">
+                                        <tr className="divide-x divide-gray-200">
+                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Nome</th>
+                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Local de Acolhimento</th>
+                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Data</th>
+                                            <th className="px-3 py-2"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-gray-200">
+                                        {formData.siblings_details?.map((sibling, idx) => (
+                                            <tr key={idx} className="border-b border-gray-200 divide-x divide-gray-200">
+                                                <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={sibling.name} onChange={e => updateSibling(idx, 'name', e.target.value)} placeholder="Nome" /></td>
+                                                <td className="p-1"><input type="text" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={sibling.location} onChange={e => updateSibling(idx, 'location', e.target.value)} placeholder="Local" /></td>
+                                                <td className="p-1"><input type="date" className="w-full border-gray-300 rounded text-sm p-1 text-gray-900" value={sibling.date} onChange={e => updateSibling(idx, 'date', e.target.value)} /></td>
+                                                <td className="p-1 text-center"><button type="button" onClick={() => removeSibling(idx)} className="text-red-500 hover:text-red-700"><Trash2 size={16} /></button></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                             </div>
+                             <button type="button" onClick={addSibling} className="text-sm text-gov-700 font-medium flex items-center"><Plus size={16} className="mr-1"/> Adicionar Irmão</button>
                         </div>
                     )}
                 </div>
@@ -574,11 +706,28 @@ const NewAdmission: React.FC<NewAdmissionProps> = ({ isDemo }) => {
 
                     <div className="md:col-span-2 mt-2">
                         <label className="block text-sm font-bold text-gray-900">Recebe visitas de:</label>
-                        <div className="flex gap-4 flex-wrap">
-                            {['Pais', 'Mãe', 'Pai', 'Irmãos', 'Parentes', 'Outros'].map(v => (
-                                <label key={v} className="flex items-center text-sm"><input type="checkbox" checked={formData.visits_received?.includes(v)} onChange={(e) => handleCheckboxGroup('visits_received', v, e.target.checked)} className="mr-1" /> {v}</label>
-                            ))}
-                        </div>
+                        <label className="flex items-center text-sm font-bold text-gray-900 mb-2">
+                            <input 
+                                type="checkbox" 
+                                checked={formData.visits_received?.includes('Não ocorrem')} 
+                                onChange={(e) => {
+                                    if (e.target.checked) {
+                                        setFormData(prev => ({ ...prev, visits_received: ['Não ocorrem'] }));
+                                    } else {
+                                        setFormData(prev => ({ ...prev, visits_received: [] }));
+                                    }
+                                }} 
+                                className="mr-2" 
+                            /> 
+                            Não ocorrem
+                        </label>
+                        {!formData.visits_received?.includes('Não ocorrem') && (
+                            <div className="flex gap-4 flex-wrap">
+                                {['Pais', 'Mãe', 'Pai', 'Irmãos', 'Parentes', 'Outros'].map(v => (
+                                    <label key={v} className="flex items-center text-sm"><input type="checkbox" checked={formData.visits_received?.includes(v)} onChange={(e) => handleCheckboxGroup('visits_received', v, e.target.checked)} className="mr-1" /> {v}</label>
+                                ))}
+                            </div>
+                        )}
                         <label className="block text-sm font-bold text-gray-900 mt-2">Frequência das Visitas</label>
                         <select name="visits_frequency" value={formData.visits_frequency} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900">
                             <option value="">Selecione...</option>

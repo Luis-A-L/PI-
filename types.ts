@@ -30,6 +30,34 @@ export interface ReferenceContact {
   address: string;
 }
 
+export interface SiblingInCare {
+  name: string;
+  location: string;
+  date: string;
+}
+
+export interface PreviousAdmission {
+  institution_name: string;
+  entry_date: string;
+  exit_date: string;
+  motive: string;
+}
+
+export interface ChildPhoto {
+  id: string;
+  child_id: string;
+  url: string;
+  created_at: string;
+}
+
+export interface ChildNote {
+  id: string;
+  child_id: string;
+  institution_id: string;
+  content: string;
+  created_at: string;
+}
+
 export interface HealthTreatment {
   treatment: string;
   local: string;
@@ -85,6 +113,7 @@ export interface Child {
   counselor_name: string;
   previous_admissions: boolean;
   previous_admissions_local: string;
+  previous_admissions_history: PreviousAdmission[];
 
   // 3. Vulnerabilidades
   socio_educational_measure: boolean;
@@ -106,7 +135,7 @@ export interface Child {
   family_composition: FamilyMember[]; // JSONB
   responsible_family: string; // Pai e Mãe, Avós, etc.
   siblings_in_care: boolean;
-  siblings_details: string;
+  siblings_details: SiblingInCare[];
 
   // 5.2 Habitacional
   housing_condition: string; // Própria, Alugada...
@@ -187,6 +216,31 @@ export interface TechnicalReport {
   status: 'draft' | 'finalized';
   created_at: string;
   updated_at: string;
+}
+
+export interface CommunityPost {
+  id: string;
+  institution_id: string;
+  author_id: string;
+  title: string;
+  content: string;
+  category: 'general' | 'donation' | 'question' | 'alert';
+  created_at: string;
+  // Joined fields (optional)
+  profiles?: { full_name: string };
+  institutions?: { name: string };
+}
+
+export interface CommunityComment {
+  id: string;
+  post_id: string;
+  institution_id: string;
+  author_id: string;
+  content: string;
+  created_at: string;
+  // Joined fields
+  profiles?: { full_name: string };
+  institutions?: { name: string };
 }
 
 export type Database = {

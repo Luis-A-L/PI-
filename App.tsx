@@ -7,6 +7,7 @@ import Login from './pages/Login';
 import NewAdmission from './pages/NewAdmission';
 import Reports from './pages/Reports';
 import ChildProfile from './pages/ChildProfile';
+import Community from './pages/Community';
 import Layout from './components/Layout';
 import { AlertCircle } from 'lucide-react';
 
@@ -105,6 +106,7 @@ const App: React.FC = () => {
           <Route path="/novo-acolhimento" element={<NewAdmission isDemo={isDemo} />} />
           <Route path="/acolhido/:id" element={<ChildProfile isDemo={isDemo} />} />
           <Route path="/relatorios" element={<Reports isDemo={isDemo} />} />
+          <Route path="/comunidade" element={<Community isDemo={isDemo} />} />
         </Route>
       </Routes>
     </HashRouter>
