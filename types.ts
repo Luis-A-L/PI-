@@ -23,6 +23,13 @@ export interface FamilyMember {
   income: string;
 }
 
+export interface ReferenceContact {
+  name: string;
+  phone: string;
+  relationship: string;
+  address: string;
+}
+
 export interface HealthTreatment {
   treatment: string;
   local: string;
@@ -49,7 +56,8 @@ export interface Child {
   naturalness: string;
   uf: string;
   sex: 'M' | 'F';
-  filiation: string;
+  mother_name: string;
+  father_name: string;
   filiation_destituted: boolean; // [opcional] à (destituídos)
   autos_number: string;
   forum_vara: string; // Foro Central, CIC, etc.
@@ -57,9 +65,10 @@ export interface Child {
   // Documentação
   birth_certificate: string;
   cpf: string;
-  reference_contacts: string;
+  reference_contacts: ReferenceContact[];
 
   // 2. Acolhimento
+  first_admission: boolean;
   entry_date: string;
   transferred_from: string;
   transferred_date: string;
@@ -158,6 +167,7 @@ export interface Child {
   
   // Meta
   notes?: string; // Legacy field, kept for compatibility
+  pia_status?: 'draft' | 'completed';
   created_at: string;
 }
 

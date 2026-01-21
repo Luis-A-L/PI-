@@ -227,10 +227,15 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
                           {child.full_name.charAt(0)}
                         </div>
                         <div className="ml-4">
-                          <div className="text-sm font-bold text-slate-900">{child.full_name}</div>
+                          <Link to={`/acolhido/${child.id}`} className="text-sm font-bold text-slate-900 hover:text-gov-700 hover:underline">
+                            {child.full_name}
+                          </Link>
                           <div className="text-xs text-slate-500 font-medium bg-slate-100 px-2 py-0.5 rounded-full inline-block mt-1">
                             {calculateAge(child.birth_date)} • {formatDate(child.birth_date)}
                           </div>
+                          {child.pia_status === 'draft' && (
+                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">Rascunho</span>
+                          )}
                         </div>
                       </div>
                     </td>

@@ -101,7 +101,7 @@ const Login: React.FC<LoginProps> = ({ onDemoLogin }) => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="block w-full pl-10 sm:text-sm border-slate-300 rounded-lg py-2.5 text-slate-900 focus:ring-gov-600 focus:border-gov-600"
-                  placeholder="admin@instituicao.org.br"
+                  placeholder="admin (ou e-mail institucional)"
                 />
               </div>
             </div>

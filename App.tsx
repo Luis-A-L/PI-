@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import Login from './pages/Login';
 import NewAdmission from './pages/NewAdmission';
 import Reports from './pages/Reports';
+import ChildProfile from './pages/ChildProfile';
 import Layout from './components/Layout';
 import { AlertCircle } from 'lucide-react';
 
@@ -102,6 +103,7 @@ const App: React.FC = () => {
         <Route element={isAuthenticated ? <Layout onLogout={handleLogout} isDemo={isDemo} /> : <Navigate to="/login" replace />}>
           <Route path="/" element={<Dashboard isDemo={isDemo} />} />
           <Route path="/novo-acolhimento" element={<NewAdmission isDemo={isDemo} />} />
+          <Route path="/acolhido/:id" element={<ChildProfile isDemo={isDemo} />} />
           <Route path="/relatorios" element={<Reports isDemo={isDemo} />} />
         </Route>
       </Routes>
