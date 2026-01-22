@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { Child } from '../types';
-import { Plus, Search, Calendar, User, FileText, ArrowRight, Activity } from 'lucide-react';
+import { Plus, Search, Calendar, User, FileText, ArrowRight, Activity, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 interface DashboardProps {
@@ -13,6 +13,12 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   useEffect(() => {
     fetchChildren();
@@ -34,8 +40,9 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
             institution_id: 'demo',
             autos_number: '0001234-56.2023.8.16.0000',
             admission_reason_types: ['Negligência', 'Vulnerabilidade Social'],
-            created_at: new Date().toISOString()
-          } as unknown as Child,
+            created_at: new Date().toISOString(),
+            child_photos: [{ url: 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?auto=format&fit=crop&w=150&q=80', created_at: new Date().toISOString() }]
+          } as any,
           { 
             id: '2', 
             full_name: 'Marcos Vinícius Pereira',
@@ -45,8 +52,8 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
             notes: 'Apresenta excelente desempenho escolar. Gosta de futebol.', 
             institution_id: 'demo',
             admission_reason_types: ['Abandono', 'Situação de Rua'],
-            created_at: new Date().toISOString()
-          } as unknown as Child,
+            created_at: new Date().toISOString(),
+          } as any,
           { 
             id: '3', 
             full_name: 'Júlia Mendes da Silva',
@@ -56,8 +63,8 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
             notes: 'Em processo de adaptação. Chora à noite.', 
             institution_id: 'demo',
             admission_reason_types: ['Violência Doméstica'],
-            created_at: new Date().toISOString()
-          } as unknown as Child,
+            created_at: new Date().toISOString(),
+          } as any,
           { 
             id: '4', 
             full_name: 'Gabriel Santos Oliveira',
@@ -67,8 +74,8 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
             notes: 'Possível reintegração familiar em breve. Avó materna manifestou interesse.', 
             institution_id: 'demo',
             admission_reason_types: ['Orfandade'],
-            created_at: new Date().toISOString()
-          } as unknown as Child
+            created_at: new Date().toISOString(),
+          } as any
         ]);
         setLoading(false);
       }, 600);
@@ -78,11 +85,16 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
     try {
       const { data, error } = await supabase
         .from('children')
-        .select('*')
+        .select('*, child_photos(url, created_at)')
         .order('entry_date', { ascending: false });
 
       if (error) throw error;
-      setChildren(data || []);
+      
+      const childrenWithPhotos = data?.map((child: any) => ({
+        ...child,
+        child_photos: child.child_photos ? child.child_photos.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) : []
+      })) || [];
+      setChildren(childrenWithPhotos);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -93,6 +105,9 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
   const filteredChildren = children.filter(child => 
     child.full_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const totalPages = Math.ceil(filteredChildren.length / itemsPerPage);
+  const paginatedChildren = filteredChildren.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
@@ -173,7 +188,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex items-center justify-between group cursor-pointer hover:border-[#63BF7A] transition-colors" onClick={() => document.getElementById('new-admission-btn')?.click()}>
             <div>
                 <p className="text-sm font-medium text-slate-500">Ação Rápida</p>
-                <p className="text-lg font-bold text-[#458C57]">Nova Admissão</p>
+                <p className="text-lg font-bold text-[#458C57]">Cadastro de Criança</p>
             </div>
             <div className="p-2 rounded-full bg-[#88F2A2]/10 text-[#458C57] group-hover:bg-[#458C57] group-hover:text-white transition-colors">
                 <Plus size={20} />
@@ -189,11 +204,11 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
         
         <Link 
           id="new-admission-btn"
-          to="/novo-acolhimento" 
+          to="/cadastro-crianca" 
           className="inline-flex items-center justify-center px-5 py-2.5 bg-[#458C57] hover:bg-[#367044] text-white text-sm font-semibold rounded-lg shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#458C57]"
         >
           <Plus className="w-5 h-5 mr-2" />
-          Novo Acolhimento
+          Cadastro de Criança
         </Link>
       </div>
 
@@ -256,12 +271,16 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-slate-200">
-                {filteredChildren.map((child) => (
+                {paginatedChildren.map((child) => (
                   <tr key={child.id} className="hover:bg-slate-50 transition-colors group">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
-                        <div className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center font-bold text-sm shadow-sm border-2 ${child.sex === 'F' ? 'bg-pink-50 text-pink-600 border-pink-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
-                          {child.full_name.charAt(0)}
+                        <div className={`flex-shrink-0 h-16 w-16 rounded-full flex items-center justify-center font-bold text-xl shadow-sm border-2 overflow-hidden ${child.sex === 'F' ? 'bg-pink-50 text-pink-600 border-pink-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                          {(child as any).child_photos && (child as any).child_photos.length > 0 ? (
+                            <img src={(child as any).child_photos[0].url} alt={child.full_name} className="h-full w-full object-cover" />
+                          ) : (
+                            child.full_name.charAt(0)
+                          )}
                         </div>
                         <div className="ml-4">
                           <Link to={`/acolhido/${child.id}`} className="text-sm font-bold text-slate-900 hover:text-[#458C57] hover:underline">
@@ -309,6 +328,45 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+        {!loading && filteredChildren.length > 0 && (
+          <div className="flex items-center justify-between border-t border-slate-200 bg-white px-4 py-3 sm:px-6">
+            <div className="flex flex-1 justify-between sm:hidden">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="relative inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Anterior
+              </button>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="relative ml-3 inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Próxima
+              </button>
+            </div>
+            <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm text-slate-700">
+                  Mostrando <span className="font-medium">{(currentPage - 1) * itemsPerPage + 1}</span> a <span className="font-medium">{Math.min(currentPage * itemsPerPage, filteredChildren.length)}</span> de <span className="font-medium">{filteredChildren.length}</span> resultados
+                </p>
+              </div>
+              <div>
+                <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                  <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="relative inline-flex items-center rounded-l-md px-2 py-2 text-slate-400 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50 hover:text-slate-700">
+                    <span className="sr-only">Anterior</span>
+                    <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+                  </button>
+                  <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="relative inline-flex items-center rounded-r-md px-2 py-2 text-slate-400 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50 hover:text-slate-700">
+                    <span className="sr-only">Próxima</span>
+                    <ChevronRight className="h-5 w-5" aria-hidden="true" />
+                  </button>
+                </nav>
+              </div>
+            </div>
           </div>
         )}
       </div>

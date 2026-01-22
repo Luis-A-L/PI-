@@ -194,6 +194,61 @@ export interface Child {
   // 13. Final
   final_considerations: string;
   
+  // Novos Campos - Cadastro Detalhado
+  social_name?: string;
+  identification_doc?: string;
+  presumed_age?: string;
+  gender_identity?: string;
+  birth_time?: string;
+  is_studying?: string;
+  registered_by?: string;
+  
+  mother_father_1_cpf?: string;
+  mother_father_1_deceased?: string;
+  grandparent_1_line_1?: string;
+  grandparent_2_line_1?: string;
+  mother_father_2_name?: string;
+  mother_father_2_cpf?: string;
+  has_mother_father_2?: string;
+  mother_father_2_deceased?: string;
+  grandparent_1_line_2?: string;
+  grandparent_2_line_2?: string;
+  has_siblings?: string;
+  has_children?: string;
+  is_child_of_teenager?: string;
+  possible_reintegration?: string;
+  has_pia?: string;
+  
+  has_health_diagnosis?: string;
+  health_diagnosis_details?: string[];
+  has_physical_disability?: string;
+  physical_disability_details?: string[];
+  has_sensory_disability?: string;
+  sensory_disability_details?: string[];
+  has_intellectual_disability?: string;
+  intellectual_disability_details?: string[];
+  has_psychosocial_disability?: string;
+  psychosocial_disability_details?: string[];
+  has_health_condition?: string;
+  health_condition_details?: string[];
+  medication_use?: string;
+  has_medical_report?: string;
+  has_chemical_dependency?: string;
+  
+  process_type?: string;
+  process_state?: string;
+  judging_body?: string;
+  process_number?: string;
+  protective_measures?: string[];
+  
+  has_gov_benefit?: string;
+  gov_benefit_type?: string;
+  has_death_threat?: string;
+  receives_visits?: string;
+  visitor_name?: string;
+  last_visit_date?: string;
+  observations?: string;
+
   // Meta
   notes?: string; // Legacy field, kept for compatibility
   pia_status?: 'draft' | 'completed';

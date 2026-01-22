@@ -5,6 +5,7 @@ import { Session } from '@supabase/supabase-js';
 import Dashboard from './pages/Dashboard';
 import Login from './pages/Login';
 import NewAdmission from './pages/NewAdmission';
+import ChildRegistration from './pages/ChildRegistration';
 import Reports from './pages/Reports';
 import ChildProfile from './pages/ChildProfile';
 import Community from './pages/Community';
@@ -34,18 +35,13 @@ const App: React.FC = () => {
 
     // Check for demo mode in local storage
     const demoActive = localStorage.getItem('demo_mode') === 'true';
-    if (demoActive) {
-      setIsDemo(true);
-      setLoading(false);
-      return;
-    }
-    
     const adminActive = localStorage.getItem('admin_mode') === 'true';
+
     if (adminActive) {
       setIsAdmin(true);
       setIsDemo(true); // Admin usa modo demo para dados fictícios neste MVP
-      setLoading(false);
-      return;
+    } else if (demoActive) {
+      setIsDemo(true);
     }
 
     if (!isConfigured()) {
@@ -79,13 +75,14 @@ const App: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    if (isDemo || isAdmin) {
-      localStorage.removeItem('demo_mode');
-      localStorage.removeItem('admin_mode');
-      setIsDemo(false);
-      setIsAdmin(false);
-    } else {
+    localStorage.removeItem('demo_mode');
+    localStorage.removeItem('admin_mode');
+    setIsDemo(false);
+    setIsAdmin(false);
+
+    if (isConfigured()) {
       await supabase.auth.signOut();
+      setSession(null);
     }
   };
 
@@ -139,6 +136,7 @@ const App: React.FC = () => {
             <>
               <Route path="/" element={<Dashboard isDemo={isDemo} />} />
               <Route path="/novo-acolhimento" element={<NewAdmission isDemo={isDemo} />} />
+              <Route path="/cadastro-crianca" element={<ChildRegistration isDemo={isDemo} />} />
               <Route path="/acolhido/:id" element={<ChildProfile isDemo={isDemo} />} />
               <Route path="/relatorios" element={<Reports isDemo={isDemo} />} />
               <Route path="/comunidade" element={<Community isDemo={isDemo} />} />

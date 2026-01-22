@@ -84,6 +84,18 @@ const Layout: React.FC<LayoutProps> = ({ onLogout, isDemo, isAdmin }) => {
               </Link>
 
               <Link
+                to="/cadastro-crianca"
+                className={`flex items-center px-4 py-3.5 rounded-lg transition-all duration-200 group ${
+                  isActive('/cadastro-crianca') 
+                    ? 'bg-[#458C57] text-white shadow-lg shadow-[#404040]/20' 
+                    : 'text-[#A4A5A6] hover:bg-[#A4A5A6]/10 hover:text-white'
+                }`}
+              >
+                <UserPlus className={`w-5 h-5 mr-3 ${isActive('/cadastro-crianca') ? 'text-white' : 'text-[#A4A5A6] group-hover:text-white'}`} />
+                <span className="font-medium">Cadastro Criança</span>
+              </Link>
+
+              <Link
                 to="/novo-acolhimento"
                 className={`flex items-center px-4 py-3.5 rounded-lg transition-all duration-200 group ${
                   isActive('/novo-acolhimento') 
@@ -91,8 +103,8 @@ const Layout: React.FC<LayoutProps> = ({ onLogout, isDemo, isAdmin }) => {
                     : 'text-[#A4A5A6] hover:bg-[#A4A5A6]/10 hover:text-white'
                 }`}
               >
-                <UserPlus className={`w-5 h-5 mr-3 ${isActive('/novo-acolhimento') ? 'text-white' : 'text-[#A4A5A6] group-hover:text-white'}`} />
-                <span className="font-medium">Novo Acolhimento</span>
+                <FileText className={`w-5 h-5 mr-3 ${isActive('/novo-acolhimento') ? 'text-white' : 'text-[#A4A5A6] group-hover:text-white'}`} />
+                <span className="font-medium">Novo Relatório PIA</span>
               </Link>
 
               <Link
@@ -160,6 +172,7 @@ const Layout: React.FC<LayoutProps> = ({ onLogout, isDemo, isAdmin }) => {
            <h2 className="text-xl font-bold text-slate-800">
              {isActive('/') && 'Visão Geral'}
              {isActive('/novo-acolhimento') && 'Cadastro de Admissão'}
+             {isActive('/cadastro-crianca') && 'Cadastro de Criança/Adolescente'}
              {isActive('/relatorios') && 'Gestão de Relatórios'}
              {isActive('/comunidade') && 'Comunidade Inter-Lares'}
            </h2>

@@ -73,8 +73,8 @@ const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
     if (isDemo) {
       setTimeout(() => {
         setInstitutionChildren([
-          { id: 'c1', full_name: 'Enzo Gabriel', birth_date: '2015-03-10', entry_date: '2023-01-15', sex: 'M' },
-          { id: 'c2', full_name: 'Valentina Pereira', birth_date: '2018-07-22', entry_date: '2023-06-10', sex: 'F' }
+          { id: 'c1', full_name: 'Enzo Gabriel', birth_date: '2015-03-10', entry_date: '2023-01-15', sex: 'M', child_photos: [{ url: 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?auto=format&fit=crop&w=150&q=80' }] },
+          { id: 'c2', full_name: 'Valentina Pereira', birth_date: '2018-07-22', entry_date: '2023-06-10', sex: 'F', child_photos: [] }
         ]);
         setLoadingChildren(false);
       }, 400);
@@ -83,10 +83,16 @@ const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
     
     const { data, error } = await supabase
       .from('children')
-      .select('*')
+      .select('*, child_photos(url, created_at)')
       .eq('institution_id', inst.id);
       
-    if (!error && data) setInstitutionChildren(data);
+    if (!error && data) {
+        const childrenWithPhotos = data.map((child: any) => ({
+            ...child,
+            child_photos: child.child_photos ? child.child_photos.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) : []
+        }));
+        setInstitutionChildren(childrenWithPhotos);
+    }
     setLoadingChildren(false);
   };
 
@@ -229,6 +235,7 @@ const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
                     <table className="min-w-full divide-y divide-slate-200">
                         <thead className="bg-slate-50">
                             <tr>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Foto</th>
                                 <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Nome</th>
                                 <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Nascimento</th>
                                 <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Data Entrada</th>
@@ -237,12 +244,21 @@ const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
                         </thead>
                         <tbody className="divide-y divide-slate-200">
                             {loadingChildren ? (
-                                <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-500">Carregando...</td></tr>
+                                <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500">Carregando...</td></tr>
                             ) : institutionChildren.length === 0 ? (
-                                <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-500">Nenhuma criança registrada nesta instituição.</td></tr>
+                                <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500">Nenhuma criança registrada nesta instituição.</td></tr>
                             ) : (
                                 institutionChildren.map((child) => (
                                     <tr key={child.id} className="hover:bg-slate-50">
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200">
+                                                {child.child_photos && child.child_photos.length > 0 ? (
+                                                    <img src={child.child_photos[0].url} alt={child.full_name} className="h-full w-full object-cover" />
+                                                ) : (
+                                                    <User size={20} className="text-slate-400" />
+                                                )}
+                                            </div>
+                                        </td>
                                         <td className="px-6 py-4 text-sm font-medium text-slate-900">{child.full_name}</td>
                                         <td className="px-6 py-4 text-sm text-slate-600">{child.birth_date ? new Date(child.birth_date).toLocaleDateString('pt-BR') : '-'}</td>
                                         <td className="px-6 py-4 text-sm text-slate-600">{child.entry_date ? new Date(child.entry_date).toLocaleDateString('pt-BR') : '-'}</td>
