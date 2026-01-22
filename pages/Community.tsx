@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { MessageCircle, Heart, HelpCircle, AlertTriangle, Send, User, Plus, X } from 'lucide-react';
+import { MessageCircle, Heart, HelpCircle, AlertTriangle, Send, User, Plus, X, Trash2 } from 'lucide-react';
 import { CommunityPost, CommunityComment } from '../types';
 
 interface CommunityProps {
@@ -14,6 +14,7 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
   const [showNewPostModal, setShowNewPostModal] = useState(false);
   const [newPost, setNewPost] = useState({ title: '', content: '', category: 'general' });
   const [submitting, setSubmitting] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
   
   // Expanded Post View
   const [selectedPost, setSelectedPost] = useState<CommunityPost | null>(null);
@@ -22,6 +23,15 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
   const [loadingComments, setLoadingComments] = useState(false);
 
   useEffect(() => {
+    const getUser = async () => {
+        if (isDemo) {
+            setCurrentUser({ id: 'demo' });
+        } else {
+            const { data: { user } } = await supabase.auth.getUser();
+            setCurrentUser(user);
+        }
+    };
+    getUser();
     fetchPosts();
   }, [isDemo, filter]);
 
@@ -129,6 +139,41 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
     }
   };
 
+  const handleDeletePost = async (e: React.MouseEvent, postId: string) => {
+      e.stopPropagation();
+      if (!confirm("Tem certeza que deseja excluir esta postagem?")) return;
+
+      if (isDemo) {
+          setPosts(posts.filter(p => p.id !== postId));
+          if (selectedPost?.id === postId) setSelectedPost(null);
+          return;
+      }
+
+      const { error } = await supabase.from('community_posts').delete().eq('id', postId);
+      if (error) {
+          alert("Erro ao excluir postagem.");
+      } else {
+          setPosts(posts.filter(p => p.id !== postId));
+          if (selectedPost?.id === postId) setSelectedPost(null);
+      }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+      if (!confirm("Tem certeza que deseja excluir este comentário?")) return;
+
+      if (isDemo) {
+          setComments(comments.filter(c => c.id !== commentId));
+          return;
+      }
+
+      const { error } = await supabase.from('community_comments').delete().eq('id', commentId);
+      if (error) {
+          alert("Erro ao excluir comentário.");
+      } else {
+          setComments(comments.filter(c => c.id !== commentId));
+      }
+  };
+
   const fetchComments = async (postId: string) => {
     setLoadingComments(true);
     if (isDemo) {
@@ -227,7 +272,7 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
         </div>
         <button 
             onClick={() => setShowNewPostModal(true)}
-            className="inline-flex items-center px-4 py-2 bg-gov-600 hover:bg-gov-700 text-white rounded-lg shadow-sm font-medium transition-colors"
+            className="inline-flex items-center px-4 py-2 bg-[#458C57] hover:bg-[#367044] text-white rounded-lg shadow-sm font-medium transition-colors"
         >
             <Plus className="w-5 h-5 mr-2" />
             Nova Postagem
@@ -246,7 +291,7 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
               <button
                 key={f.id}
                 onClick={() => setFilter(f.id)}
-                className={`flex items-center px-4 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${filter === f.id ? 'bg-gov-100 text-gov-800 border border-gov-200' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+                className={`flex items-center px-4 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${filter === f.id ? 'bg-[#88F2A2]/20 text-[#458C57] border border-[#88F2A2]/40' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
               >
                   {f.icon && <span className="mr-2">{f.icon}</span>}
                   {f.label}
@@ -256,7 +301,7 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
 
       {/* Posts Grid */}
       {loading ? (
-          <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gov-600"></div></div>
+          <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#458C57]"></div></div>
       ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {posts.map(post => (
@@ -271,6 +316,11 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
                               {getCategoryIcon(post.category)}
                               <span className="ml-1.5">{getCategoryLabel(post.category)}</span>
                           </span>
+                          {currentUser && post.author_id === currentUser.id && (
+                              <button onClick={(e) => handleDeletePost(e, post.id)} className="text-red-400 hover:text-red-600 p-1 transition-colors" title="Excluir postagem">
+                                  <Trash2 size={16} />
+                              </button>
+                          )}
                           <span className="text-xs text-slate-400">{new Date(post.created_at).toLocaleDateString('pt-BR')}</span>
                       </div>
                       <h3 className="text-lg font-bold text-slate-900 mb-2 line-clamp-2">{post.title}</h3>
@@ -306,7 +356,7 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
                       <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Categoria</label>
                           <select 
-                            className="w-full border-slate-300 rounded-lg shadow-sm focus:ring-gov-500 focus:border-gov-500"
+                            className="w-full border-slate-300 rounded-lg shadow-sm focus:ring-[#458C57] focus:border-[#458C57]"
                             value={newPost.category}
                             onChange={e => setNewPost({...newPost, category: e.target.value})}
                           >
@@ -321,7 +371,7 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
                           <input 
                             type="text" 
                             required
-                            className="w-full border-slate-300 rounded-lg shadow-sm focus:ring-gov-500 focus:border-gov-500"
+                            className="w-full border-slate-300 rounded-lg shadow-sm focus:ring-[#458C57] focus:border-[#458C57]"
                             placeholder="Resumo do assunto"
                             value={newPost.title}
                             onChange={e => setNewPost({...newPost, title: e.target.value})}
@@ -332,7 +382,7 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
                           <textarea 
                             required
                             rows={4}
-                            className="w-full border-slate-300 rounded-lg shadow-sm focus:ring-gov-500 focus:border-gov-500"
+                            className="w-full border-slate-300 rounded-lg shadow-sm focus:ring-[#458C57] focus:border-[#458C57]"
                             placeholder="Descreva detalhadamente..."
                             value={newPost.content}
                             onChange={e => setNewPost({...newPost, content: e.target.value})}
@@ -340,7 +390,7 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
                       </div>
                       <div className="flex justify-end pt-2">
                           <button type="button" onClick={() => setShowNewPostModal(false)} className="mr-3 px-4 py-2 text-slate-700 hover:bg-slate-100 rounded-lg font-medium">Cancelar</button>
-                          <button type="submit" disabled={submitting} className="px-4 py-2 bg-gov-600 text-white rounded-lg hover:bg-gov-700 font-medium shadow-sm disabled:opacity-50">
+                          <button type="submit" disabled={submitting} className="px-4 py-2 bg-[#458C57] text-white rounded-lg hover:bg-[#367044] font-medium shadow-sm disabled:opacity-50">
                               {submitting ? 'Publicando...' : 'Publicar'}
                           </button>
                       </div>
@@ -371,7 +421,7 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
                   <div className="flex-1 overflow-y-auto p-6">
                       <h2 className="text-xl font-bold text-slate-900 mb-4">{selectedPost.title}</h2>
                       <div className="flex items-center mb-6 pb-6 border-b border-slate-100">
-                          <div className="w-10 h-10 rounded-full bg-gov-100 flex items-center justify-center text-gov-600 mr-3 font-bold">
+                          <div className="w-10 h-10 rounded-full bg-[#88F2A2]/20 flex items-center justify-center text-[#458C57] mr-3 font-bold">
                               {selectedPost.profiles?.full_name?.charAt(0) || 'U'}
                           </div>
                           <div>
@@ -388,7 +438,7 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
                       
                       <div className="space-y-4 mb-6">
                           {loadingComments ? (
-                              <div className="text-center py-4"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gov-600 inline-block"></div></div>
+                              <div className="text-center py-4"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#458C57] inline-block"></div></div>
                           ) : comments.length === 0 ? (
                               <p className="text-slate-500 text-sm italic">Seja o primeiro a comentar.</p>
                           ) : (
@@ -396,7 +446,14 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
                                   <div key={comment.id} className="bg-slate-50 p-3 rounded-lg border border-slate-100">
                                       <div className="flex justify-between items-start mb-1">
                                           <span className="font-bold text-xs text-slate-700">{comment.profiles?.full_name} <span className="font-normal text-slate-500">({comment.institutions?.name})</span></span>
-                                          <span className="text-[10px] text-slate-400">{new Date(comment.created_at).toLocaleString('pt-BR')}</span>
+                                          <div className="flex items-center gap-2">
+                                              <span className="text-[10px] text-slate-400">{new Date(comment.created_at).toLocaleString('pt-BR')}</span>
+                                              {currentUser && (comment.author_id === currentUser.id || selectedPost.author_id === currentUser.id) && (
+                                                  <button onClick={() => handleDeleteComment(comment.id)} className="text-red-400 hover:text-red-600" title="Excluir comentário">
+                                                      <Trash2 size={12} />
+                                                  </button>
+                                              )}
+                                          </div>
                                       </div>
                                       <p className="text-sm text-slate-700">{comment.content}</p>
                                   </div>
@@ -409,12 +466,12 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
                       <form onSubmit={handleCreateComment} className="flex gap-2">
                           <input 
                             type="text" 
-                            className="flex-1 border-slate-300 rounded-lg shadow-sm focus:ring-gov-500 focus:border-gov-500 text-sm"
+                            className="flex-1 border-slate-300 rounded-lg shadow-sm focus:ring-[#458C57] focus:border-[#458C57] text-sm"
                             placeholder="Escreva um comentário..."
                             value={newComment}
                             onChange={e => setNewComment(e.target.value)}
                           />
-                          <button type="submit" disabled={!newComment.trim()} className="p-2 bg-gov-600 text-white rounded-lg hover:bg-gov-700 disabled:opacity-50">
+                          <button type="submit" disabled={!newComment.trim()} className="p-2 bg-[#458C57] text-white rounded-lg hover:bg-[#367044] disabled:opacity-50">
                               <Send size={18} />
                           </button>
                       </form>

@@ -8,19 +8,42 @@ import NewAdmission from './pages/NewAdmission';
 import Reports from './pages/Reports';
 import ChildProfile from './pages/ChildProfile';
 import Community from './pages/Community';
+import AdminHouses from './pages/AdminHouses';
 import Layout from './components/Layout';
 import { AlertCircle } from 'lucide-react';
+import logo from './assets/Logo PIA.png';
 
 const App: React.FC = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [isDemo, setIsDemo] = useState<boolean>(false);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Configurar Favicon e Título
+    const link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
+    if (!link) {
+      const newLink = document.createElement('link');
+      newLink.rel = 'icon';
+      newLink.href = logo;
+      document.head.appendChild(newLink);
+    } else {
+      link.href = logo;
+    }
+    document.title = "Curitiba Acolhe";
+
     // Check for demo mode in local storage
     const demoActive = localStorage.getItem('demo_mode') === 'true';
     if (demoActive) {
       setIsDemo(true);
+      setLoading(false);
+      return;
+    }
+    
+    const adminActive = localStorage.getItem('admin_mode') === 'true';
+    if (adminActive) {
+      setIsAdmin(true);
+      setIsDemo(true); // Admin usa modo demo para dados fictícios neste MVP
       setLoading(false);
       return;
     }
@@ -49,16 +72,24 @@ const App: React.FC = () => {
     setIsDemo(true);
   };
 
+  const handleAdminLogin = () => {
+    localStorage.setItem('admin_mode', 'true');
+    setIsAdmin(true);
+    setIsDemo(true);
+  };
+
   const handleLogout = async () => {
-    if (isDemo) {
+    if (isDemo || isAdmin) {
       localStorage.removeItem('demo_mode');
+      localStorage.removeItem('admin_mode');
       setIsDemo(false);
+      setIsAdmin(false);
     } else {
       await supabase.auth.signOut();
     }
   };
 
-  if (!isConfigured() && !isDemo) {
+  if (!isConfigured() && !isDemo && !isAdmin) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-8 border-l-4 border-red-600">
@@ -85,28 +116,36 @@ const App: React.FC = () => {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gov-700"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#458C57]"></div>
       </div>
     );
   }
 
-  const isAuthenticated = session || isDemo;
+  const isAuthenticated = session || isDemo || isAdmin;
 
   return (
     <HashRouter>
       <Routes>
         <Route 
           path="/login" 
-          element={!isAuthenticated ? <Login onDemoLogin={handleDemoLogin} /> : <Navigate to="/" replace />} 
+          element={!isAuthenticated ? <Login onDemoLogin={handleDemoLogin} onAdminLogin={handleAdminLogin} /> : <Navigate to={isAdmin ? "/admin/casas" : "/"} replace />} 
         />
         
         {/* Protected Routes */}
-        <Route element={isAuthenticated ? <Layout onLogout={handleLogout} isDemo={isDemo} /> : <Navigate to="/login" replace />}>
-          <Route path="/" element={<Dashboard isDemo={isDemo} />} />
-          <Route path="/novo-acolhimento" element={<NewAdmission isDemo={isDemo} />} />
-          <Route path="/acolhido/:id" element={<ChildProfile isDemo={isDemo} />} />
-          <Route path="/relatorios" element={<Reports isDemo={isDemo} />} />
-          <Route path="/comunidade" element={<Community isDemo={isDemo} />} />
+        <Route element={isAuthenticated ? <Layout onLogout={handleLogout} isDemo={isDemo} isAdmin={isAdmin} /> : <Navigate to="/login" replace />}>
+          {isAdmin ? (
+             <Route path="/admin/casas" element={<AdminHouses isDemo={isDemo} />} />
+          ) : (
+            <>
+              <Route path="/" element={<Dashboard isDemo={isDemo} />} />
+              <Route path="/novo-acolhimento" element={<NewAdmission isDemo={isDemo} />} />
+              <Route path="/acolhido/:id" element={<ChildProfile isDemo={isDemo} />} />
+              <Route path="/relatorios" element={<Reports isDemo={isDemo} />} />
+              <Route path="/comunidade" element={<Community isDemo={isDemo} />} />
+            </>
+          )}
+          {/* Redirecionamento padrão para admin se tentar acessar rota inválida */}
+          {isAdmin && <Route path="*" element={<Navigate to="/admin/casas" replace />} />}
         </Route>
       </Routes>
     </HashRouter>

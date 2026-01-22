@@ -187,7 +187,7 @@ const Reports: React.FC<ReportsProps> = ({ isDemo }) => {
           <input
             type="text"
             placeholder="Buscar acolhido para relatório..."
-            className="pl-10 w-full p-2.5 border border-slate-300 rounded-lg text-slate-900 bg-white focus:ring-2 focus:ring-gov-600 focus:border-transparent transition-shadow shadow-sm"
+            className="pl-10 w-full p-2.5 border border-slate-300 rounded-lg text-slate-900 bg-white focus:ring-2 focus:ring-[#458C57] focus:border-transparent transition-shadow shadow-sm"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -201,20 +201,20 @@ const Reports: React.FC<ReportsProps> = ({ isDemo }) => {
               <button
                 key={child.id}
                 onClick={() => handleSelectChild(child)}
-                className="flex items-center p-4 border border-slate-200 rounded-lg hover:border-gov-500 hover:bg-gov-50 hover:shadow-md transition-all text-left group bg-white"
+                className="flex items-center p-4 border border-slate-200 rounded-lg hover:border-[#63BF7A] hover:bg-[#88F2A2]/10 hover:shadow-md transition-all text-left group bg-white"
               >
                 <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold mr-4 text-lg border-2 ${child.sex === 'F' ? 'bg-pink-50 text-pink-600 border-pink-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
                   {child.full_name.charAt(0)}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-base font-bold text-slate-800 truncate group-hover:text-gov-700">{child.full_name}</p>
+                  <p className="text-base font-bold text-slate-800 truncate group-hover:text-[#458C57]">{child.full_name}</p>
                   <p className="text-xs text-slate-500 truncate flex items-center mt-1">
                     <FileText size={12} className="mr-1" />
                     Autos: {child.autos_number || 'N/A'}
                   </p>
                 </div>
-                <div className="p-2 bg-slate-50 rounded-full group-hover:bg-gov-200 transition-colors">
-                    <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-gov-700" />
+                <div className="p-2 bg-slate-50 rounded-full group-hover:bg-[#88F2A2]/30 transition-colors">
+                    <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-[#458C57]" />
                 </div>
               </button>
             ))}
@@ -236,7 +236,7 @@ const Reports: React.FC<ReportsProps> = ({ isDemo }) => {
               <div>
                 <div className="flex items-center space-x-2">
                     <h2 className="text-xl font-bold text-slate-900">Relatório Técnico</h2>
-                    <span className="px-2 py-0.5 bg-gov-100 text-gov-800 text-xs font-bold rounded border border-gov-200 uppercase">Confidencial</span>
+                    <span className="px-2 py-0.5 bg-[#88F2A2]/20 text-[#458C57] text-xs font-bold rounded border border-[#88F2A2]/40 uppercase">Confidencial</span>
                 </div>
                 <p className="text-sm text-slate-600 mt-1">Referente a: <strong className="text-slate-900">{selectedChild.full_name}</strong></p>
               </div>
@@ -249,7 +249,7 @@ const Reports: React.FC<ReportsProps> = ({ isDemo }) => {
             <div className="p-8 overflow-y-auto flex-1 bg-white">
               {isReportLoading ? (
                 <div className="flex flex-col items-center justify-center h-full space-y-4">
-                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-gov-700"></div>
+                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#458C57]"></div>
                   <p className="text-slate-500">Buscando histórico...</p>
                 </div>
               ) : (
@@ -262,7 +262,7 @@ const Reports: React.FC<ReportsProps> = ({ isDemo }) => {
                           name="report_date" 
                           value={reportData.report_date} 
                           onChange={handleInputChange} 
-                          className="w-full border border-slate-300 rounded-md p-2.5 text-slate-900 bg-white focus:ring-2 focus:ring-gov-600 focus:border-transparent shadow-sm" 
+                          className="w-full border border-slate-300 rounded-md p-2.5 text-slate-900 bg-white focus:ring-2 focus:ring-[#458C57] focus:border-transparent shadow-sm" 
                         />
                      </div>
                      <div className="md:col-span-4">
@@ -271,7 +271,7 @@ const Reports: React.FC<ReportsProps> = ({ isDemo }) => {
                           name="status" 
                           value={reportData.status} 
                           onChange={handleInputChange}
-                          className={`w-full border rounded-md p-2.5 text-slate-900 bg-white focus:ring-2 focus:ring-gov-600 focus:border-transparent shadow-sm font-medium ${reportData.status === 'finalized' ? 'border-green-300 bg-green-50 text-green-900' : 'border-amber-300 bg-amber-50 text-amber-900'}`}
+                          className={`w-full border rounded-md p-2.5 text-slate-900 bg-white focus:ring-2 focus:ring-[#458C57] focus:border-transparent shadow-sm font-medium ${reportData.status === 'finalized' ? 'border-green-300 bg-green-50 text-green-900' : 'border-amber-300 bg-amber-50 text-amber-900'}`}
                         >
                           <option value="draft">🟡 Rascunho (Em edição)</option>
                           <option value="finalized">🟢 Finalizado (Pronto para envio)</option>
@@ -295,7 +295,7 @@ const Reports: React.FC<ReportsProps> = ({ isDemo }) => {
                           rows={4} 
                           value={reportData.summary || ''} 
                           onChange={handleInputChange}
-                          className="w-full border border-slate-300 rounded-lg p-3 text-slate-900 bg-white focus:ring-2 focus:ring-gov-600 focus:border-transparent shadow-sm"
+                          className="w-full border border-slate-300 rounded-lg p-3 text-slate-900 bg-white focus:ring-2 focus:ring-[#458C57] focus:border-transparent shadow-sm"
                           placeholder="Descreva o contexto de entrada, motivo do acolhimento e condições iniciais..."
                         />
                       </div>
@@ -308,7 +308,7 @@ const Reports: React.FC<ReportsProps> = ({ isDemo }) => {
                             rows={5} 
                             value={reportData.health_status || ''} 
                             onChange={handleInputChange}
-                            className="w-full border border-slate-300 rounded-lg p-3 text-slate-900 bg-white focus:ring-2 focus:ring-gov-600 focus:border-transparent shadow-sm"
+                            className="w-full border border-slate-300 rounded-lg p-3 text-slate-900 bg-white focus:ring-2 focus:ring-[#458C57] focus:border-transparent shadow-sm"
                             placeholder="Vacinação, doenças pré-existentes, tratamentos em curso..."
                           />
                         </div>
@@ -319,7 +319,7 @@ const Reports: React.FC<ReportsProps> = ({ isDemo }) => {
                             rows={5} 
                             value={reportData.evolution || ''} 
                             onChange={handleInputChange}
-                            className="w-full border border-slate-300 rounded-lg p-3 text-slate-900 bg-white focus:ring-2 focus:ring-gov-600 focus:border-transparent shadow-sm"
+                            className="w-full border border-slate-300 rounded-lg p-3 text-slate-900 bg-white focus:ring-2 focus:ring-[#458C57] focus:border-transparent shadow-sm"
                             placeholder="Adaptação, comportamento, rotina, escolaridade..."
                           />
                         </div>
@@ -332,7 +332,7 @@ const Reports: React.FC<ReportsProps> = ({ isDemo }) => {
                           rows={4} 
                           value={reportData.family_situation || ''} 
                           onChange={handleInputChange}
-                          className="w-full border border-slate-300 rounded-lg p-3 text-slate-900 bg-white focus:ring-2 focus:ring-gov-600 focus:border-transparent shadow-sm"
+                          className="w-full border border-slate-300 rounded-lg p-3 text-slate-900 bg-white focus:ring-2 focus:ring-[#458C57] focus:border-transparent shadow-sm"
                           placeholder="Frequência de visitas, qualidade do vínculo, situação dos genitores..."
                         />
                       </div>
@@ -344,7 +344,7 @@ const Reports: React.FC<ReportsProps> = ({ isDemo }) => {
                           rows={3} 
                           value={reportData.referrals || ''} 
                           onChange={handleInputChange}
-                          className="w-full border border-slate-300 rounded-lg p-3 text-slate-900 bg-white focus:ring-2 focus:ring-gov-600 focus:border-transparent shadow-sm"
+                          className="w-full border border-slate-300 rounded-lg p-3 text-slate-900 bg-white focus:ring-2 focus:ring-[#458C57] focus:border-transparent shadow-sm"
                           placeholder="Encaminhamentos para rede (Saúde, Educação, CRAS, CREAS)..."
                         />
                       </div>
@@ -357,7 +357,7 @@ const Reports: React.FC<ReportsProps> = ({ isDemo }) => {
                           rows={5} 
                           value={reportData.conclusion || ''} 
                           onChange={handleInputChange}
-                          className="w-full border border-slate-300 rounded-lg p-3 text-slate-900 bg-white focus:ring-2 focus:ring-gov-600 focus:border-transparent shadow-sm"
+                          className="w-full border border-slate-300 rounded-lg p-3 text-slate-900 bg-white focus:ring-2 focus:ring-[#458C57] focus:border-transparent shadow-sm"
                           placeholder="Conclusão técnica..."
                         />
                       </div>
@@ -379,7 +379,7 @@ const Reports: React.FC<ReportsProps> = ({ isDemo }) => {
                 type="submit" 
                 form="report-form"
                 disabled={isSaving || isReportLoading}
-                className="px-5 py-2.5 bg-gov-700 text-white rounded-lg hover:bg-gov-800 font-semibold flex items-center shadow-md shadow-gov-900/10 transition-all transform active:scale-95"
+                className="px-5 py-2.5 bg-[#458C57] text-white rounded-lg hover:bg-[#367044] font-semibold flex items-center shadow-md shadow-[#404040]/10 transition-all transform active:scale-95"
               >
                 {isSaving ? 'Salvando...' : <><Save className="w-4 h-4 mr-2" /> Salvar Relatório</>}
               </button>

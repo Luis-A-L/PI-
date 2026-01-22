@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, Mail, Lock, Info } from 'lucide-react';
+import { Mail, Lock, Info } from 'lucide-react';
+import logo from '../assets/Logo PIA.png';
 
 interface LoginProps {
   onDemoLogin: () => void;
+  onAdminLogin: () => void;
 }
 
-const Login: React.FC<LoginProps> = ({ onDemoLogin }) => {
+const Login: React.FC<LoginProps> = ({ onDemoLogin, onAdminLogin }) => {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -18,6 +20,16 @@ const Login: React.FC<LoginProps> = ({ onDemoLogin }) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+
+    // Admin Bypass
+    if (email === 'admin' && password === 'admin') {
+      setTimeout(() => {
+        onAdminLogin();
+        setLoading(false);
+        navigate('/admin/casas');
+      }, 800);
+      return;
+    }
 
     // Bypass for testing/demo request
     if (!email || !password || email === 'demo' || email.includes('teste')) {
@@ -48,9 +60,7 @@ const Login: React.FC<LoginProps> = ({ onDemoLogin }) => {
     <div className="min-h-screen bg-slate-100 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="flex justify-center">
-          <div className="bg-gov-700 p-4 rounded-2xl shadow-lg">
-            <ShieldCheck className="w-12 h-12 text-white" />
-          </div>
+          <img src={logo} alt="Logo PIA" className="h-24 w-auto object-contain" />
         </div>
         <h2 className="mt-6 text-center text-3xl font-extrabold text-slate-900 tracking-tight">
           Curitiba Acolhe
@@ -100,7 +110,7 @@ const Login: React.FC<LoginProps> = ({ onDemoLogin }) => {
                   autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="block w-full pl-10 sm:text-sm border-slate-300 rounded-lg py-2.5 text-slate-900 focus:ring-gov-600 focus:border-gov-600"
+                  className="block w-full pl-10 sm:text-sm border-slate-300 rounded-lg py-2.5 text-slate-900 focus:ring-[#458C57] focus:border-[#458C57]"
                   placeholder="admin (ou e-mail institucional)"
                 />
               </div>
@@ -121,7 +131,7 @@ const Login: React.FC<LoginProps> = ({ onDemoLogin }) => {
                   autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full pl-10 sm:text-sm border-slate-300 rounded-lg py-2.5 text-slate-900 focus:ring-gov-600 focus:border-gov-600"
+                  className="block w-full pl-10 sm:text-sm border-slate-300 rounded-lg py-2.5 text-slate-900 focus:ring-[#458C57] focus:border-[#458C57]"
                 />
               </div>
             </div>
@@ -130,7 +140,7 @@ const Login: React.FC<LoginProps> = ({ onDemoLogin }) => {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-md text-sm font-bold text-white bg-gov-700 hover:bg-gov-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gov-600 disabled:opacity-50 transition-all hover:scale-[1.01]"
+                className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-md text-sm font-bold text-white bg-[#458C57] hover:bg-[#367044] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#458C57] disabled:opacity-50 transition-all hover:scale-[1.01]"
               >
                 {loading ? 'Entrando...' : 'Acessar Painel'}
               </button>

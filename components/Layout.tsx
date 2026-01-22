@@ -4,36 +4,37 @@ import {
   LogOut, 
   Home, 
   UserPlus, 
-  ShieldCheck, 
   Building2,
   AlertTriangle,
   FileText,
   Menu,
   MessageCircle
 } from 'lucide-react';
+import logo from '../assets/Logo PIA.png';
 
 interface LayoutProps {
   onLogout: () => void;
   isDemo?: boolean;
+  isAdmin?: boolean;
 }
 
-const Layout: React.FC<LayoutProps> = ({ onLogout, isDemo }) => {
+const Layout: React.FC<LayoutProps> = ({ onLogout, isDemo, isAdmin }) => {
   const location = useLocation();
   const isActive = (path: string) => location.pathname === path;
 
   return (
     <div className="flex h-screen bg-slate-100">
       {/* Sidebar - Dark Theme */}
-      <aside className="w-72 bg-slate-900 text-white hidden md:flex flex-col shadow-xl z-20">
-        <div className="h-20 flex items-center px-6 border-b border-slate-800 bg-slate-950">
-          <ShieldCheck className="w-8 h-8 text-gov-400 mr-3" />
+      <aside className="w-72 bg-[#404040] text-white hidden md:flex flex-col shadow-xl z-20">
+        <div className="h-20 flex items-center px-6 border-b border-[#A4A5A6]/20 bg-[#404040]">
+          <img src={logo} alt="Logo PIA" className="h-12 w-auto mr-3 object-contain" />
           <div>
             <span className="font-bold text-lg tracking-tight block text-white">Curitiba Acolhe</span>
-            <span className="text-xs text-slate-400 font-medium">Gestão Governamental</span>
+            <span className="text-xs text-[#A4A5A6] font-medium">Gestão Governamental</span>
           </div>
         </div>
 
-        {isDemo && (
+        {isDemo && !isAdmin && (
           <div className="mx-4 mt-6 p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-start">
             <AlertTriangle className="w-5 h-5 text-amber-400 mr-3 shrink-0 mt-0.5" />
             <div>
@@ -43,71 +44,97 @@ const Layout: React.FC<LayoutProps> = ({ onLogout, isDemo }) => {
           </div>
         )}
 
+        {isAdmin && (
+          <div className="mx-4 mt-6 p-4 bg-purple-500/10 border border-purple-500/30 rounded-lg flex items-start">
+            <Building2 className="w-5 h-5 text-purple-400 mr-3 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm text-purple-200 font-bold">Administrador</p>
+              <p className="text-xs text-purple-200/70 mt-1">Acesso total à gestão de casas.</p>
+            </div>
+          </div>
+        )}
+
         <nav className="flex-1 px-4 py-8 space-y-2">
           <p className="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Principal</p>
           
-          <Link
-            to="/"
-            className={`flex items-center px-4 py-3.5 rounded-lg transition-all duration-200 group ${
-              isActive('/') 
-                ? 'bg-gov-600 text-white shadow-lg shadow-gov-900/20' 
-                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-            }`}
-          >
-            <Home className={`w-5 h-5 mr-3 ${isActive('/') ? 'text-white' : 'text-slate-500 group-hover:text-white'}`} />
-            <span className="font-medium">Dashboard</span>
-          </Link>
+          {isAdmin ? (
+            <Link
+              to="/admin/casas"
+              className={`flex items-center px-4 py-3.5 rounded-lg transition-all duration-200 group ${
+                isActive('/admin/casas') 
+                  ? 'bg-[#458C57] text-white shadow-lg shadow-[#404040]/20' 
+                  : 'text-[#A4A5A6] hover:bg-[#A4A5A6]/10 hover:text-white'
+              }`}
+            >
+              <Building2 className={`w-5 h-5 mr-3 ${isActive('/admin/casas') ? 'text-white' : 'text-[#A4A5A6] group-hover:text-white'}`} />
+              <span className="font-medium">Gestão de Casas</span>
+            </Link>
+          ) : (
+            <>
+              <Link
+                to="/"
+                className={`flex items-center px-4 py-3.5 rounded-lg transition-all duration-200 group ${
+                  isActive('/') 
+                    ? 'bg-[#458C57] text-white shadow-lg shadow-[#404040]/20' 
+                    : 'text-[#A4A5A6] hover:bg-[#A4A5A6]/10 hover:text-white'
+                }`}
+              >
+                <Home className={`w-5 h-5 mr-3 ${isActive('/') ? 'text-white' : 'text-[#A4A5A6] group-hover:text-white'}`} />
+                <span className="font-medium">Dashboard</span>
+              </Link>
 
-          <Link
-            to="/novo-acolhimento"
-            className={`flex items-center px-4 py-3.5 rounded-lg transition-all duration-200 group ${
-              isActive('/novo-acolhimento') 
-                ? 'bg-gov-600 text-white shadow-lg shadow-gov-900/20' 
-                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-            }`}
-          >
-            <UserPlus className={`w-5 h-5 mr-3 ${isActive('/novo-acolhimento') ? 'text-white' : 'text-slate-500 group-hover:text-white'}`} />
-            <span className="font-medium">Novo Acolhimento</span>
-          </Link>
+              <Link
+                to="/novo-acolhimento"
+                className={`flex items-center px-4 py-3.5 rounded-lg transition-all duration-200 group ${
+                  isActive('/novo-acolhimento') 
+                    ? 'bg-[#458C57] text-white shadow-lg shadow-[#404040]/20' 
+                    : 'text-[#A4A5A6] hover:bg-[#A4A5A6]/10 hover:text-white'
+                }`}
+              >
+                <UserPlus className={`w-5 h-5 mr-3 ${isActive('/novo-acolhimento') ? 'text-white' : 'text-[#A4A5A6] group-hover:text-white'}`} />
+                <span className="font-medium">Novo Acolhimento</span>
+              </Link>
 
-          <Link
-            to="/relatorios"
-            className={`flex items-center px-4 py-3.5 rounded-lg transition-all duration-200 group ${
-              isActive('/relatorios') 
-                ? 'bg-gov-600 text-white shadow-lg shadow-gov-900/20' 
-                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-            }`}
-          >
-            <FileText className={`w-5 h-5 mr-3 ${isActive('/relatorios') ? 'text-white' : 'text-slate-500 group-hover:text-white'}`} />
-            <span className="font-medium">Relatórios Técnicos</span>
-          </Link>
+              <Link
+                to="/relatorios"
+                className={`flex items-center px-4 py-3.5 rounded-lg transition-all duration-200 group ${
+                  isActive('/relatorios') 
+                    ? 'bg-[#458C57] text-white shadow-lg shadow-[#404040]/20' 
+                    : 'text-[#A4A5A6] hover:bg-[#A4A5A6]/10 hover:text-white'
+                }`}
+              >
+                <FileText className={`w-5 h-5 mr-3 ${isActive('/relatorios') ? 'text-white' : 'text-[#A4A5A6] group-hover:text-white'}`} />
+                <span className="font-medium">Relatórios Técnicos</span>
+              </Link>
 
-          <Link
-            to="/comunidade"
-            className={`flex items-center px-4 py-3.5 rounded-lg transition-all duration-200 group ${
-              isActive('/comunidade') 
-                ? 'bg-gov-600 text-white shadow-lg shadow-gov-900/20' 
-                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-            }`}
-          >
-            <MessageCircle className={`w-5 h-5 mr-3 ${isActive('/comunidade') ? 'text-white' : 'text-slate-500 group-hover:text-white'}`} />
-            <span className="font-medium">Comunidade</span>
-          </Link>
+              <Link
+                to="/comunidade"
+                className={`flex items-center px-4 py-3.5 rounded-lg transition-all duration-200 group ${
+                  isActive('/comunidade') 
+                    ? 'bg-[#458C57] text-white shadow-lg shadow-[#404040]/20' 
+                    : 'text-[#A4A5A6] hover:bg-[#A4A5A6]/10 hover:text-white'
+                }`}
+              >
+                <MessageCircle className={`w-5 h-5 mr-3 ${isActive('/comunidade') ? 'text-white' : 'text-[#A4A5A6] group-hover:text-white'}`} />
+                <span className="font-medium">Comunidade</span>
+              </Link>
+            </>
+          )}
         </nav>
 
-        <div className="p-4 border-t border-slate-800 bg-slate-950">
+        <div className="p-4 border-t border-[#A4A5A6]/20 bg-[#404040]">
           <div className="flex items-center mb-4 px-2">
-            <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-gov-400 border border-slate-700">
+            <div className="w-10 h-10 rounded-full bg-[#A4A5A6]/10 flex items-center justify-center text-[#88F2A2] border border-[#A4A5A6]/20">
               <Building2 size={20} />
             </div>
             <div className="ml-3 overflow-hidden">
-              <p className="text-sm font-semibold text-white truncate">Lar Esperança</p>
-              <p className="text-xs text-slate-400 truncate">{isDemo ? 'Usuário Demo' : 'Acesso Seguro'}</p>
+              <p className="text-sm font-semibold text-white truncate">{isAdmin ? 'Administrador' : 'Lar Esperança'}</p>
+              <p className="text-xs text-[#A4A5A6] truncate">{isAdmin ? 'Gestão Central' : (isDemo ? 'Usuário Demo' : 'Acesso Seguro')}</p>
             </div>
           </div>
           <button
             onClick={onLogout}
-            className="flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-slate-300 bg-slate-800 hover:bg-red-900/30 hover:text-red-400 rounded-md transition-colors border border-slate-700 hover:border-red-900/50"
+            className="flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-[#A4A5A6] bg-[#A4A5A6]/10 hover:bg-red-900/30 hover:text-red-400 rounded-md transition-colors border border-[#A4A5A6]/20 hover:border-red-900/50"
           >
             <LogOut className="w-4 h-4 mr-2" />
             Encerrar Sessão
@@ -118,12 +145,12 @@ const Layout: React.FC<LayoutProps> = ({ onLogout, isDemo }) => {
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden bg-slate-100 h-full relative">
         {/* Mobile Header */}
-        <header className="md:hidden h-16 bg-slate-900 text-white flex items-center justify-between px-4 shadow-md shrink-0">
+        <header className="md:hidden h-16 bg-[#404040] text-white flex items-center justify-between px-4 shadow-md shrink-0">
           <div className="flex items-center">
-            <ShieldCheck className="w-6 h-6 text-gov-400 mr-2" />
+            <img src={logo} alt="Logo PIA" className="h-8 w-auto mr-2 object-contain" />
             <span className="font-bold">Curitiba Acolhe</span>
           </div>
-          <button onClick={onLogout} className="text-slate-400 hover:text-white">
+          <button onClick={onLogout} className="text-[#A4A5A6] hover:text-white">
             <LogOut className="w-6 h-6" />
           </button>
         </header>
