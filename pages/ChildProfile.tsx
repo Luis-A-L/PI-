@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Save, AlertTriangle, Plus, Trash2, User, FileText, Edit, Camera, Printer, MessageSquare, Clock, X } from 'lucide-react';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { ArrowLeft, Save, AlertTriangle, Plus, Trash2, User, FileText, Edit, Camera, Printer, MessageSquare, Clock, X, History, Eye, FilePlus, ChevronDown, ChevronUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Child, FamilyMember, HealthTreatment, Commitment, ReferenceContact, PreviousAdmission, ChildPhoto, ChildNote, SiblingInCare } from '../types';
 import { jsPDF } from 'jspdf';
@@ -13,11 +13,13 @@ interface ChildProfileProps {
 const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasDisability, setHasDisability] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [isRenewing, setIsRenewing] = useState(false);
   const [photos, setPhotos] = useState<ChildPhoto[]>([]);
   const [notes, setNotes] = useState<ChildNote[]>([]);
   const [newNote, setNewNote] = useState('');
@@ -27,6 +29,27 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [showEducationModal, setShowEducationModal] = useState(false);
   const [editingFamilyMember, setEditingFamilyMember] = useState<number | null>(null);
+  
+  // History Tabs State
+  const [activeTab, setActiveTab] = useState<'profile' | 'history'>('profile');
+  const [piaHistory, setPiaHistory] = useState<any[]>([]);
+  const [viewingHistoryItem, setViewingHistoryItem] = useState<any | null>(null);
+
+  const [expandedSections, setExpandedSections] = useState({
+    identification: true,
+    admission: true,
+    vulnerabilities: true,
+    physical: true,
+    family: true,
+    health: true,
+    education: true,
+    work: true,
+    others: true
+  });
+
+  const toggleSection = (section: keyof typeof expandedSections) => {
+    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
   
   const educationOptions = [
     "Não alfabetizado", "Ensino Fundamental Incompleto", "Ensino Fundamental Completo",
@@ -66,8 +89,45 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
       fetchChildData(id);
       fetchPhotos(id);
       fetchNotes(id);
+      fetchPiaHistory(id);
     }
   }, [id, isDemo]);
+
+  useEffect(() => {
+    if (location.state) {
+      if ((location.state as any).edit) setIsEditing(true);
+      if ((location.state as any).renew) setIsRenewing(true);
+    }
+  }, [location]);
+
+  const fetchPiaHistory = async (childId: string) => {
+    if (isDemo) {
+        setPiaHistory([
+            { id: 'h1', created_at: new Date(Date.now() - 86400000 * 30).toISOString(), snapshot: { ...formData, full_name: 'Versão Antiga (Demo)' } },
+        ]);
+        return;
+    }
+    const { data } = await supabase
+        .from('pia_history')
+        .select('*')
+        .eq('child_id', childId)
+        .order('created_at', { ascending: false });
+    
+    if (data) setPiaHistory(data);
+  };
+
+  const handleViewHistory = (item: any) => {
+    setFormData(item.snapshot);
+    setViewingHistoryItem(item);
+    setActiveTab('profile');
+    setIsEditing(false);
+    window.scrollTo(0, 0);
+  };
+
+  const handleExitHistoryView = () => {
+    setViewingHistoryItem(null);
+    if (id) fetchChildData(id); // Reload current data
+  };
 
   const fetchChildData = async (childId: string) => {
     setIsLoading(true);
@@ -432,9 +492,20 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
     setIsSubmitting(true);
     setError(null);
 
+    if (isDemo) {
+        setTimeout(() => {
+            alert(isRenewing ? "Novo PIA gerado (Demo)! Histórico salvo." : "Salvo com sucesso (Demo)!");
+            setIsEditing(false);
+            setIsRenewing(false);
+            setIsSubmitting(false);
+        }, 1000);
+        return;
+    }
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não autenticado");
+      const { data: profile } = await supabase.from('profiles').select('institution_id').eq('id', user.id).single();
 
       // Clean data based on logic
       const payload = { ...formData, pia_status: submitAction.current };
@@ -449,14 +520,37 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
           payload.transferred_date = null as any;
       }
 
+      // Lógica de Histórico / Renovação
+      if (isRenewing) {
+          // 1. Buscar dados atuais para arquivar
+          const { data: currentData, error: fetchError } = await supabase
+            .from('children')
+            .select('*')
+            .eq('id', id)
+            .single();
+            
+          if (!fetchError && currentData) {
+              // 2. Inserir no histórico
+              // Assume que existe uma tabela 'pia_history' com colunas: child_id, snapshot (jsonb), created_at
+              await supabase.from('pia_history').insert([{
+                  child_id: id,
+                  snapshot: currentData,
+                  created_at: new Date().toISOString(),
+                  created_by: user.id,
+                  institution_id: profile?.institution_id
+              }]);
+          }
+      }
+
       const { error: updateError } = await supabase
         .from('children')
         .update(payload)
         .eq('id', id);
 
       if (updateError) throw updateError;
-      alert(submitAction.current === 'draft' ? "Rascunho salvo com sucesso!" : "PIA atualizado com sucesso!");
+      alert(isRenewing ? "Novo PIA gerado com sucesso! O anterior foi arquivado no histórico." : (submitAction.current === 'draft' ? "Rascunho salvo com sucesso!" : "PIA atualizado com sucesso!"));
       setIsEditing(false);
+      setIsRenewing(false);
       // navigate('/'); // Comentado para manter na tela e ver o resultado, ou descomente se preferir voltar
     } catch (err: any) {
       console.error(err);
@@ -815,9 +909,16 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
             </Link>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center">
                 <User className="mr-2 text-[#458C57]" />
-                Perfil do Acolhido
+                {isRenewing ? "Reavaliação do PIA" : "Perfil do Acolhido"}
             </h1>
             <p className="text-gray-500">Visualização e edição do Plano Individual de Atendimento (PIA).</p>
+            {isRenewing && (
+                <div className="mt-4 bg-purple-50 border-l-4 border-purple-500 p-4">
+                    <p className="text-sm text-purple-700">
+                        <strong>Modo de Reavaliação:</strong> Ao salvar, os dados atuais serão arquivados no histórico e este formulário definirá o novo PIA vigente.
+                    </p>
+                </div>
+            )}
             {formData.pia_status === 'draft' && (
                 <div className="mt-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                     <FileText className="w-3 h-3 mr-1" />
@@ -827,13 +928,91 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
         </div>
       </div>
 
+      {/* Tabs Navigation */}
+      <div className="mb-6 border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8">
+            <button
+              onClick={() => setActiveTab('profile')}
+              className={`${activeTab === 'profile' ? 'border-[#458C57] text-[#458C57]' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center transition-colors`}
+            >
+              <User className="w-4 h-4 mr-2" />
+              Perfil Atual
+            </button>
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`${activeTab === 'history' ? 'border-[#458C57] text-[#458C57]' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center transition-colors`}
+            >
+              <History className="w-4 h-4 mr-2" />
+              Histórico de PIAs
+            </button>
+          </nav>
+      </div>
+
+      {activeTab === 'history' ? (
+          <div className="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden animate-in fade-in">
+              <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+                  <h3 className="text-lg font-medium text-gray-900">Histórico de Alterações (PIA)</h3>
+                  <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded-full">{piaHistory.length} registros</span>
+              </div>
+              <ul className="divide-y divide-gray-200">
+                  {piaHistory.length === 0 ? (
+                      <li className="p-12 text-center text-gray-500 flex flex-col items-center">
+                          <History className="w-12 h-12 text-gray-300 mb-2" />
+                          Nenhum histórico registrado para este acolhido.
+                      </li>
+                  ) : (
+                      piaHistory.map((item) => (
+                          <li key={item.id} className="p-4 hover:bg-gray-50 flex justify-between items-center transition-colors group">
+                              <div className="flex items-center">
+                                  <div className="bg-blue-50 p-2 rounded-full mr-4 text-blue-600 group-hover:bg-blue-100 transition-colors">
+                                      <Clock size={20} />
+                                  </div>
+                                  <div>
+                                      <p className="text-sm font-bold text-gray-900">Versão de {new Date(item.created_at).toLocaleDateString('pt-BR')}</p>
+                                      <p className="text-xs text-gray-500">{new Date(item.created_at).toLocaleTimeString('pt-BR')} • Arquivado por renovação/alteração</p>
+                                  </div>
+                              </div>
+                              <button 
+                                onClick={() => handleViewHistory(item)}
+                                className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#458C57]"
+                              >
+                                  <Eye className="w-3 h-3 mr-1" />
+                                  Visualizar
+                              </button>
+                          </li>
+                      ))
+                  )}
+              </ul>
+          </div>
+      ) : (
+        <>
+        {viewingHistoryItem && (
+            <div className="mb-6 bg-blue-50 border-l-4 border-blue-500 p-4 flex justify-between items-center rounded-r-lg shadow-sm animate-in slide-in-from-top-2">
+                <div className="flex items-center">
+                    <History className="text-blue-500 w-5 h-5 mr-3" />
+                    <div>
+                        <p className="text-sm text-blue-800 font-bold">Modo de Visualização de Histórico</p>
+                        <p className="text-xs text-blue-600">Você está vendo a versão salva em: {new Date(viewingHistoryItem.created_at).toLocaleString('pt-BR')}</p>
+                    </div>
+                </div>
+                <button onClick={handleExitHistoryView} className="px-4 py-2 bg-white text-blue-700 text-sm font-medium rounded border border-blue-200 hover:bg-blue-50 transition-colors shadow-sm">
+                    Voltar ao Atual
+                </button>
+            </div>
+        )}
+
       {/* Photo Gallery Section */}
       <div className="bg-white shadow-sm rounded-lg border border-gray-200 p-6 mb-8 print:break-inside-avoid">
         <div className="flex flex-col md:flex-row gap-6 items-start">
             <div className="w-full md:w-1/3">
                 <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden border-2 border-gray-200 flex items-center justify-center relative group">
                     {photos.length > 0 ? (
+                        <>
                         <img src={photos[0].url} alt="Foto Atual" className="w-full h-full object-cover" />
+                        <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs py-1 text-center backdrop-blur-sm">
+                            {new Date(photos[0].created_at).toLocaleDateString('pt-BR')}
+                        </div>
+                        </>
                     ) : (
                         <User className="w-24 h-24 text-gray-300" />
                     )}
@@ -859,6 +1038,9 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                     {photos.slice(1).map(photo => (
                         <div key={photo.id} className="aspect-square rounded-md overflow-hidden border border-gray-200 relative group">
                             <img src={photo.url} alt="Histórico" className="w-full h-full object-cover" />
+                            <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[10px] py-0.5 text-center backdrop-blur-sm">
+                                {new Date(photo.created_at).toLocaleDateString('pt-BR')}
+                            </div>
                             <button onClick={() => handleDeletePhoto(photo.id)} className="absolute top-1 right-1 bg-white/80 p-1 rounded-full text-red-500 hover:bg-red-50 hover:text-red-700 opacity-0 group-hover:opacity-100 transition-opacity" title="Excluir foto">
                                 <Trash2 size={14} />
                             </button>
@@ -880,7 +1062,11 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
 
         {/* 1. IDENTIFICAÇÃO */}
         <section className="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden">
-            <div className="bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800">1. IDENTIFICAÇÃO / DADOS PESSOAIS</div>
+            <button type="button" onClick={() => toggleSection('identification')} className="w-full flex justify-between items-center bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800 hover:bg-gray-200 transition-colors text-left">
+                <span>1. IDENTIFICAÇÃO / DADOS PESSOAIS</span>
+                {expandedSections.identification ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </button>
+            {expandedSections.identification && (
             <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-2">
                     <label className="block text-sm font-bold text-gray-900">Nome Completo</label>
@@ -984,11 +1170,16 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                     {isEditing && <button type="button" onClick={addReferenceContact} className="text-sm text-[#458C57] font-medium flex items-center"><Plus size={16} className="mr-1"/> Adicionar Contato</button>}
                 </div>
             </div>
+            )}
         </section>
 
         {/* 2. ACOLHIMENTO */}
         <section className="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden">
-            <div className="bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800">2. INFORMAÇÕES SOBRE ACOLHIMENTO</div>
+            <button type="button" onClick={() => toggleSection('admission')} className="w-full flex justify-between items-center bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800 hover:bg-gray-200 transition-colors text-left">
+                <span>2. INFORMAÇÕES SOBRE ACOLHIMENTO</span>
+                {expandedSections.admission ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </button>
+            {expandedSections.admission && (
             <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                 
                 {/* First Admission Checkbox */}
@@ -1104,11 +1295,16 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                      </div>
                 </div>
             </div>
+            )}
         </section>
 
         {/* 3. VULNERABILIDADES */}
         <section className="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden">
-            <div className="bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800">3. VULNERABILIDADES</div>
+            <button type="button" onClick={() => toggleSection('vulnerabilities')} className="w-full flex justify-between items-center bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800 hover:bg-gray-200 transition-colors text-left">
+                <span>3. VULNERABILIDADES</span>
+                {expandedSections.vulnerabilities ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </button>
+            {expandedSections.vulnerabilities && (
             <div className="p-6 space-y-4">
                  <div className="flex items-center gap-4">
                     <span className="text-sm font-bold text-gray-900 w-64">Em cumprimento de medida socioeducativa:</span>
@@ -1148,11 +1344,16 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                     <label><input type="radio" name="street_situation" checked={!formData.street_situation} onChange={() => setFormData(p => ({...p, street_situation: false}))} disabled={!isEditing} /> Não</label>
                  </div>
             </div>
+            )}
         </section>
 
         {/* 4. CARACTERÍSTICAS FÍSICAS */}
         <section className="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden">
-             <div className="bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800">4. CARACTERÍSTICAS FÍSICAS</div>
+             <button type="button" onClick={() => toggleSection('physical')} className="w-full flex justify-between items-center bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800 hover:bg-gray-200 transition-colors text-left">
+                <span>4. CARACTERÍSTICAS FÍSICAS</span>
+                {expandedSections.physical ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+             </button>
+             {expandedSections.physical && (
              <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                     <label className="block text-sm font-bold text-gray-900">Raça/Cor</label>
@@ -1196,11 +1397,16 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                     <input type="text" name="physical_others" value={formData.physical_others} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing} />
                 </div>
              </div>
+             )}
         </section>
 
         {/* 5. SITUAÇÃO FAMILIAR */}
         <section className="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden">
-             <div className="bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800">5. SITUAÇÃO FAMILIAR</div>
+             <button type="button" onClick={() => toggleSection('family')} className="w-full flex justify-between items-center bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800 hover:bg-gray-200 transition-colors text-left">
+                <span>5. SITUAÇÃO FAMILIAR</span>
+                {expandedSections.family ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+             </button>
+             {expandedSections.family && (
              <div className="p-6">
                 <div className="mb-4">
                     <label className="block text-sm font-bold text-gray-900 mb-1">Tipo de Família</label>
@@ -1401,11 +1607,16 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                      <input type="text" name="referrals" value={formData.referrals} onChange={handleChange} className="border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Encaminhamentos" disabled={!isEditing} />
                 </div>
              </div>
+             )}
         </section>
 
         {/* 6. SAÚDE */}
         <section className="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden">
-             <div className="bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800">6. SITUAÇÃO DE SAÚDE</div>
+             <button type="button" onClick={() => toggleSection('health')} className="w-full flex justify-between items-center bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800 hover:bg-gray-200 transition-colors text-left">
+                <span>6. SITUAÇÃO DE SAÚDE</span>
+                {expandedSections.health ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+             </button>
+             {expandedSections.health && (
              <div className="p-6">
                  <div className="mb-4">
                     <label className="block text-sm font-bold text-gray-900">Deficiência</label>
@@ -1503,12 +1714,17 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                     )}
                 </div>
              </div>
+             )}
         </section>
 
         {/* 7. EDUCACIONAL e 8. TRABALHO */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <section className="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden">
-                <div className="bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800">7. SITUAÇÃO EDUCACIONAL</div>
+            <section className="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden h-fit">
+                <button type="button" onClick={() => toggleSection('education')} className="w-full flex justify-between items-center bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800 hover:bg-gray-200 transition-colors text-left">
+                    <span>7. SITUAÇÃO EDUCACIONAL</span>
+                    {expandedSections.education ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                </button>
+                {expandedSections.education && (
                 <div className="p-6 space-y-4">
                      <select name="school_status" value={formData.school_status} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing}>
                          <option value="">Situação Escolar...</option>
@@ -1531,10 +1747,15 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                         </>
                      )}
                 </div>
+                )}
             </section>
 
-            <section className="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden">
-                <div className="bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800">8. TRABALHO / PROFISSIONALIZAÇÃO</div>
+            <section className="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden h-fit">
+                <button type="button" onClick={() => toggleSection('work')} className="w-full flex justify-between items-center bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800 hover:bg-gray-200 transition-colors text-left">
+                    <span>8. TRABALHO / PROFISSIONALIZAÇÃO</span>
+                    {expandedSections.work ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                </button>
+                {expandedSections.work && (
                 <div className="p-6">
                      <label className="block text-sm font-bold text-gray-900 mb-2">Inserção no Mundo do Trabalho</label>
                      <select name="work_insertion" value={formData.work_insertion} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" disabled={!isEditing}>
@@ -1545,12 +1766,17 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                          <input type="text" name="work_insertion_details" className="mt-2 w-full border-gray-300 rounded-md border p-2 text-gray-900" placeholder="Qual?" disabled={!isEditing} />
                      )}
                 </div>
+                )}
             </section>
         </div>
 
         {/* 9 - 13 SEÇÕES FINAIS */}
         <section className="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden">
-             <div className="bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800">OUTROS (9-13)</div>
+             <button type="button" onClick={() => toggleSection('others')} className="w-full flex justify-between items-center bg-gray-100 px-6 py-3 border-b border-gray-200 font-bold text-gray-800 hover:bg-gray-200 transition-colors text-left">
+                <span>OUTROS (9-13)</span>
+                {expandedSections.others ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+             </button>
+             {expandedSections.others && (
              <div className="p-6 space-y-4">
                  <div>
                     <label className="block text-sm font-bold text-gray-900">9. Esporte e Lazer</label>
@@ -1601,6 +1827,7 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
                     <textarea name="final_considerations" value={formData.final_considerations} onChange={handleChange} className="w-full border-gray-300 rounded-md border p-2 text-gray-900" rows={3} disabled={!isEditing} />
                  </div>
              </div>
+             )}
         </section>
 
         <div className="flex justify-end pt-4 gap-3 sticky bottom-0 bg-gray-50 p-4 border-t border-gray-200 shadow-inner print:hidden">
@@ -1609,12 +1836,24 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
               <button type="button" onClick={() => navigate('/')} className="bg-white py-2 px-6 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#458C57]">
                 Voltar
               </button>
-              <button type="button" onClick={(e) => {
-                e.preventDefault();
-                setIsEditing(true);
-              }} className="inline-flex justify-center py-2 px-6 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-[#458C57] hover:bg-[#367044] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#458C57]">
-                <Edit className="w-4 h-4 mr-2" /> Alterar
-              </button>
+              {!viewingHistoryItem && (
+                  <>
+                  <button type="button" onClick={(e) => {
+                    e.preventDefault();
+                    setIsEditing(true);
+                    setIsRenewing(true);
+                    window.scrollTo(0, 0);
+                  }} className="inline-flex justify-center py-2 px-6 border border-purple-600 shadow-sm text-sm font-medium rounded-md text-purple-600 bg-white hover:bg-purple-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500">
+                    <FilePlus className="w-4 h-4 mr-2" /> Reavaliação
+                  </button>
+                  <button type="button" onClick={(e) => {
+                    e.preventDefault();
+                    setIsEditing(true);
+                  }} className="inline-flex justify-center py-2 px-6 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-[#458C57] hover:bg-[#367044] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#458C57]">
+                    <Edit className="w-4 h-4 mr-2" /> Alterar
+                  </button>
+                  </>
+              )}
               <button type="button" onClick={generatePDF} disabled={isGeneratingPDF} className="ml-3 inline-flex justify-center py-2 px-6 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#458C57] disabled:opacity-50">
                 {isGeneratingPDF ? 'Gerando...' : <><Printer className="w-4 h-4 mr-2" /> Baixar PDF</>}
               </button>
@@ -1634,6 +1873,8 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
           )}
         </div>
       </form>
+      </>
+      )}
       </div>
     </div>
   );

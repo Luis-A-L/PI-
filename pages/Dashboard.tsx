@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { Child } from '../types';
-import { Plus, Search, Calendar, User, FileText, ArrowRight, Activity, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Search, Calendar, User, FileText, ArrowRight, Activity, ChevronLeft, ChevronRight, SortAsc, SortDesc, Eye, Edit, FilePlus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 interface DashboardProps {
@@ -16,9 +16,11 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
+  const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'age' | 'date'; direction: 'asc' | 'desc' } | null>(null);
+
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm]);
+  }, [searchTerm, sortConfig]);
 
   useEffect(() => {
     fetchChildren();
@@ -102,9 +104,50 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
     }
   };
 
-  const filteredChildren = children.filter(child => 
-    child.full_name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const getAgeNumber = (birthDate: string) => {
+    if (!birthDate) return -1;
+    const today = new Date();
+    const birth = new Date(birthDate);
+    let age = today.getFullYear() - birth.getFullYear();
+    const m = today.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+      age--;
+    }
+    return age;
+  };
+
+  const filteredChildren = children.filter(child => {
+    const matchesSearch = child.full_name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          (child.autos_number && child.autos_number.toLowerCase().includes(searchTerm.toLowerCase()));
+    return matchesSearch;
+  });
+
+  if (sortConfig) {
+      filteredChildren.sort((a, b) => {
+          let comparison = 0;
+          if (sortConfig.key === 'name') {
+              comparison = a.full_name.localeCompare(b.full_name);
+          } else if (sortConfig.key === 'age') {
+              const ageA = getAgeNumber(a.birth_date);
+              const ageB = getAgeNumber(b.birth_date);
+              comparison = ageA - ageB;
+          } else if (sortConfig.key === 'date') {
+              const dateA = new Date(a.entry_date || '').getTime() || 0;
+              const dateB = new Date(b.entry_date || '').getTime() || 0;
+              comparison = dateA - dateB;
+          }
+          return sortConfig.direction === 'asc' ? comparison : -comparison;
+      });
+  }
+
+  const handleSort = (key: 'name' | 'age' | 'date') => {
+    setSortConfig(current => {
+      if (current?.key === key) {
+        return { key, direction: current.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
 
   const totalPages = Math.ceil(filteredChildren.length / itemsPerPage);
   const paginatedChildren = filteredChildren.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -212,19 +255,59 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
         </Link>
       </div>
 
-      {/* Search Bar */}
-      <div className="bg-white p-2 rounded-xl shadow-sm border border-slate-200 mb-6 max-w-md">
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-5 w-5 text-slate-400" />
+      {/* Filters */}
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6">
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="relative flex-1">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-5 w-5 text-slate-400" />
+            </div>
+            <input
+              type="text"
+              className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-lg leading-5 bg-white placeholder-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#458C57] focus:border-transparent sm:text-sm"
+              placeholder="Buscar por nome, autos..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
           </div>
-          <input
-            type="text"
-            className="block w-full pl-10 pr-3 py-2.5 border-none rounded-lg leading-5 bg-transparent placeholder-slate-400 text-slate-900 focus:outline-none focus:ring-0 sm:text-sm"
-            placeholder="Buscar por nome, autos..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+          
+          <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0">
+             <button
+                onClick={() => handleSort('name')}
+                className={`px-4 py-2.5 rounded-lg font-medium text-sm transition-colors flex items-center whitespace-nowrap ${
+                    sortConfig?.key === 'name'
+                    ? 'bg-[#458C57] text-white hover:bg-[#367044]' 
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300'
+                }`}
+             >
+                {sortConfig?.key === 'name' && sortConfig.direction === 'desc' ? <SortDesc className="w-4 h-4 mr-2"/> : <SortAsc className="w-4 h-4 mr-2"/>}
+                Nome
+             </button>
+
+             <button
+                onClick={() => handleSort('age')}
+                className={`px-4 py-2.5 rounded-lg font-medium text-sm transition-colors flex items-center whitespace-nowrap ${
+                    sortConfig?.key === 'age'
+                    ? 'bg-[#458C57] text-white hover:bg-[#367044]' 
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300'
+                }`}
+             >
+                {sortConfig?.key === 'age' && sortConfig.direction === 'asc' ? <SortAsc className="w-4 h-4 mr-2"/> : <SortDesc className="w-4 h-4 mr-2"/>}
+                Idade
+             </button>
+
+             <button
+                onClick={() => handleSort('date')}
+                className={`px-4 py-2.5 rounded-lg font-medium text-sm transition-colors flex items-center whitespace-nowrap ${
+                    sortConfig?.key === 'date'
+                    ? 'bg-[#458C57] text-white hover:bg-[#367044]' 
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300'
+                }`}
+             >
+                {sortConfig?.key === 'date' && sortConfig.direction === 'asc' ? <SortAsc className="w-4 h-4 mr-2"/> : <SortDesc className="w-4 h-4 mr-2"/>}
+                Data Entrada
+             </button>
+          </div>
         </div>
       </div>
 
@@ -319,10 +402,42 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
                          <span className="text-xs text-slate-500 truncate" title={child.notes}>{child.notes || 'Sem observações.'}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-right text-sm font-medium">
-                      <Link to="/relatorios" className="text-[#458C57] hover:text-[#367044] flex items-center justify-end group-hover:underline">
-                        Ver <ArrowRight className="ml-1 w-4 h-4" />
-                      </Link>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <div className="flex flex-col items-end gap-2">
+                        <div className="flex items-center justify-end gap-1">
+                          <Link 
+                            to={`/acolhido/${child.id}`} 
+                            className="p-2 text-slate-400 hover:text-[#458C57] hover:bg-slate-100 rounded-lg transition-colors" 
+                            title="Ver PIA"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Link>
+                          <Link 
+                            to="/relatorios" 
+                            className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" 
+                            title="Relatório Técnico"
+                          >
+                            <FileText className="w-4 h-4" />
+                          </Link>
+                          <Link 
+                            to={`/acolhido/${child.id}`} 
+                            state={{ edit: true }}
+                            className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" 
+                            title="Editar PIA"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Link>
+                        </div>
+                        <Link 
+                          to={`/acolhido/${child.id}`} 
+                          state={{ edit: true, renew: true }}
+                          className="flex items-center justify-center px-3 py-1.5 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-md transition-colors text-xs font-medium w-full" 
+                          title="Reavaliação"
+                        >
+                          <FilePlus className="w-3 h-3 mr-1" />
+                          Reavaliação
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}

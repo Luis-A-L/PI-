@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { MessageCircle, Heart, HelpCircle, AlertTriangle, Send, User, Plus, X, Trash2 } from 'lucide-react';
+import { MessageCircle, Heart, HelpCircle, AlertTriangle, Send, User, Plus, X, Trash2, Search } from 'lucide-react';
 import { CommunityPost, CommunityComment } from '../types';
 
 interface CommunityProps {
@@ -11,6 +11,7 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState('');
   const [showNewPostModal, setShowNewPostModal] = useState(false);
   const [newPost, setNewPost] = useState({ title: '', content: '', category: 'general' });
   const [submitting, setSubmitting] = useState(false);
@@ -33,7 +34,7 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
     };
     getUser();
     fetchPosts();
-  }, [isDemo, filter]);
+  }, [isDemo, filter, searchTerm]);
 
   const fetchPosts = async () => {
     setLoading(true);
@@ -79,6 +80,10 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
 
     if (filter !== 'all') {
       query = query.eq('category', filter);
+    }
+
+    if (searchTerm) {
+      query = query.or(`title.ilike.%${searchTerm}%,content.ilike.%${searchTerm}%`);
     }
 
     const { data, error } = await query;
@@ -280,23 +285,38 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-          {[
-              { id: 'all', label: 'Todos', icon: null },
-              { id: 'donation', label: 'Doações', icon: <Heart size={16} /> },
-              { id: 'question', label: 'Dúvidas', icon: <HelpCircle size={16} /> },
-              { id: 'alert', label: 'Avisos', icon: <AlertTriangle size={16} /> },
-              { id: 'general', label: 'Geral', icon: <MessageCircle size={16} /> },
-          ].map(f => (
-              <button
-                key={f.id}
-                onClick={() => setFilter(f.id)}
-                className={`flex items-center px-4 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${filter === f.id ? 'bg-[#88F2A2]/20 text-[#458C57] border border-[#88F2A2]/40' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
-              >
-                  {f.icon && <span className="mr-2">{f.icon}</span>}
-                  {f.label}
-              </button>
-          ))}
+      <div className="flex flex-col md:flex-row gap-4 mb-6 justify-between items-center">
+          <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0 w-full md:w-auto">
+              {[
+                  { id: 'all', label: 'Todos', icon: null },
+                  { id: 'donation', label: 'Doações', icon: <Heart size={16} /> },
+                  { id: 'question', label: 'Dúvidas', icon: <HelpCircle size={16} /> },
+                  { id: 'alert', label: 'Avisos', icon: <AlertTriangle size={16} /> },
+                  { id: 'general', label: 'Geral', icon: <MessageCircle size={16} /> },
+              ].map(f => (
+                  <button
+                    key={f.id}
+                    onClick={() => setFilter(f.id)}
+                    className={`flex items-center px-4 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${filter === f.id ? 'bg-[#88F2A2]/20 text-[#458C57] border border-[#88F2A2]/40' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+                  >
+                      {f.icon && <span className="mr-2">{f.icon}</span>}
+                      {f.label}
+                  </button>
+              ))}
+          </div>
+          
+          <div className="relative w-full md:w-64">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-4 w-4 text-slate-400" />
+            </div>
+            <input
+              type="text"
+              className="block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-full leading-5 bg-white placeholder-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#458C57] focus:border-transparent sm:text-sm"
+              placeholder="Buscar postagens..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
       </div>
 
       {/* Posts Grid */}
