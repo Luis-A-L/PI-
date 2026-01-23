@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { MessageCircle, Heart, HelpCircle, AlertTriangle, Send, User, Plus, X, Trash2, Search } from 'lucide-react';
+import { MessageCircle, Heart, HelpCircle, AlertTriangle, Send, User, Plus, X, Trash2, Search, Building2, Phone, Mail, CheckCircle, Image as ImageIcon, ThumbsUp } from 'lucide-react';
 import { CommunityPost, CommunityComment } from '../types';
 
 interface CommunityProps {
@@ -8,12 +8,16 @@ interface CommunityProps {
 }
 
 const Community: React.FC<CommunityProps> = ({ isDemo }) => {
+  const [activeTab, setActiveTab] = useState<'feed' | 'directory'>('feed');
   const [posts, setPosts] = useState<CommunityPost[]>([]);
+  const [institutionsList, setInstitutionsList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [showNewPostModal, setShowNewPostModal] = useState(false);
   const [newPost, setNewPost] = useState({ title: '', content: '', category: 'general' });
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   
@@ -36,6 +40,24 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
     fetchPosts();
   }, [isDemo, filter, searchTerm]);
 
+  useEffect(() => {
+    if (activeTab === 'directory') {
+        fetchInstitutions();
+    }
+  }, [activeTab, isDemo]);
+
+  const fetchInstitutions = async () => {
+    if (isDemo) {
+        setInstitutionsList([
+            { id: '1', name: 'Lar Esperança', email: 'contato@laresperanca.org', phone: '(41) 3333-3333', manager: 'Maria Silva', address: 'Rua das Flores, 123' },
+            { id: '2', name: 'Casa do Menino', email: 'adm@casadomenino.org', phone: '(41) 3333-4444', manager: 'João Santos', address: 'Av. Paraná, 456' }
+        ]);
+        return;
+    }
+    const { data } = await supabase.from('institutions').select('*').eq('active', true);
+    if (data) setInstitutionsList(data);
+  };
+
   const fetchPosts = async () => {
     setLoading(true);
     if (isDemo) {
@@ -50,7 +72,9 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
             category: 'donation',
             created_at: new Date().toISOString(),
             profiles: { full_name: 'Maria Silva' },
-            institutions: { name: 'Lar Esperança' }
+            institutions: { name: 'Lar Esperança' },
+            status: 'open',
+            likes: 5
           },
           {
             id: '2',
@@ -61,7 +85,9 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
             category: 'question',
             created_at: new Date(Date.now() - 86400000).toISOString(),
             profiles: { full_name: 'João Santos' },
-            institutions: { name: 'Casa do Menino' }
+            institutions: { name: 'Casa do Menino' },
+            status: 'resolved',
+            likes: 2
           }
         ]);
         setLoading(false);
@@ -93,6 +119,14 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
     setLoading(false);
   };
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setSelectedImage(file);
+      setImagePreview(URL.createObjectURL(file));
+    }
+  };
+
   const handleCreatePost = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -108,12 +142,16 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
           category: newPost.category as any,
           created_at: new Date().toISOString(),
           profiles: { full_name: 'Usuário Demo' },
-          institutions: { name: 'Instituição Demo' }
+          institutions: { name: 'Instituição Demo' },
+          status: 'open',
+          likes: 0,
+          image_url: imagePreview
         };
         setPosts([post, ...posts]);
         setSubmitting(false);
         setShowNewPostModal(false);
         setNewPost({ title: '', content: '', category: 'general' });
+        setSelectedImage(null); setImagePreview(null);
       }, 500);
       return;
     }
@@ -123,13 +161,26 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
       if (!user) throw new Error("Usuário não autenticado");
 
       const { data: profile } = await supabase.from('profiles').select('institution_id').eq('id', user.id).single();
+
+      let image_url = null;
+      if (selectedImage) {
+          const fileExt = selectedImage.name.split('.').pop();
+          const fileName = `${Math.random()}.${fileExt}`;
+          const { error: uploadError } = await supabase.storage.from('community-images').upload(fileName, selectedImage);
+          if (!uploadError) {
+              const { data: publicUrlData } = supabase.storage.from('community-images').getPublicUrl(fileName);
+              image_url = publicUrlData.publicUrl;
+          }
+      }
       
       const { error } = await supabase.from('community_posts').insert([{
         institution_id: profile.institution_id,
         author_id: user.id,
         title: newPost.title,
         content: newPost.content,
-        category: newPost.category
+        category: newPost.category,
+        image_url: image_url,
+        status: 'open'
       }]);
 
       if (error) throw error;
@@ -137,10 +188,43 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
       fetchPosts();
       setShowNewPostModal(false);
       setNewPost({ title: '', content: '', category: 'general' });
+      setSelectedImage(null); setImagePreview(null);
     } catch (err) {
       alert("Erro ao criar postagem.");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleLike = async (e: React.MouseEvent, post: any) => {
+    e.stopPropagation();
+    if (isDemo) {
+        const updatedPosts = posts.map(p => p.id === post.id ? { ...p, likes: (p as any).likes ? (p as any).likes + 1 : 1 } : p);
+        setPosts(updatedPosts);
+        if (selectedPost?.id === post.id) setSelectedPost({ ...selectedPost, likes: (selectedPost as any).likes + 1 } as any);
+        return;
+    }
+    // Simple increment for MVP
+    const newLikes = (post.likes || 0) + 1;
+    const { error } = await supabase.from('community_posts').update({ likes: newLikes }).eq('id', post.id);
+    if (!error) {
+        setPosts(posts.map(p => p.id === post.id ? { ...p, likes: newLikes } : p) as any);
+        if (selectedPost?.id === post.id) setSelectedPost({ ...selectedPost, likes: newLikes } as any);
+    }
+  };
+
+  const handleResolve = async (e: React.MouseEvent, post: any) => {
+    e.stopPropagation();
+    const newStatus = post.status === 'resolved' ? 'open' : 'resolved';
+    
+    if (isDemo) {
+        setPosts(posts.map(p => p.id === post.id ? { ...p, status: newStatus } : p) as any);
+        return;
+    }
+
+    const { error } = await supabase.from('community_posts').update({ status: newStatus }).eq('id', post.id);
+    if (!error) {
+        setPosts(posts.map(p => p.id === post.id ? { ...p, status: newStatus } : p) as any);
     }
   };
 
@@ -284,6 +368,24 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
         </button>
       </div>
 
+      {/* Tabs */}
+      <div className="flex space-x-1 bg-slate-200/50 p-1 rounded-lg mb-6 w-fit">
+        <button
+            onClick={() => setActiveTab('feed')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'feed' ? 'bg-white text-[#458C57] shadow-sm' : 'text-slate-600 hover:text-slate-800'}`}
+        >
+            Feed de Postagens
+        </button>
+        <button
+            onClick={() => setActiveTab('directory')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'directory' ? 'bg-white text-[#458C57] shadow-sm' : 'text-slate-600 hover:text-slate-800'}`}
+        >
+            Diretório de Instituições
+        </button>
+      </div>
+
+      {activeTab === 'feed' ? (
+      <>
       {/* Filters */}
       <div className="flex flex-col md:flex-row gap-4 mb-6 justify-between items-center">
           <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0 w-full md:w-auto">
@@ -325,7 +427,7 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
       ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {posts.map(post => (
-                  <div key={post.id} onClick={() => openPost(post)} className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 hover:shadow-md transition-shadow cursor-pointer flex flex-col h-full">
+                  <div key={post.id} onClick={() => openPost(post)} className={`bg-white rounded-xl shadow-sm border p-5 hover:shadow-md transition-shadow cursor-pointer flex flex-col h-full ${(post as any).status === 'resolved' ? 'border-green-200 bg-green-50/30' : 'border-slate-200'}`}>
                       <div className="flex justify-between items-start mb-3">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
                               post.category === 'donation' ? 'bg-pink-50 text-pink-700 border-pink-100' :
@@ -336,6 +438,12 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
                               {getCategoryIcon(post.category)}
                               <span className="ml-1.5">{getCategoryLabel(post.category)}</span>
                           </span>
+                          {(post as any).status === 'resolved' && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-200 ml-2">
+                                  <CheckCircle className="w-3 h-3 mr-1" />
+                                  Resolvido
+                              </span>
+                          )}
                           {currentUser && post.author_id === currentUser.id && (
                               <button onClick={(e) => handleDeletePost(e, post.id)} className="text-red-400 hover:text-red-600 p-1 transition-colors" title="Excluir postagem">
                                   <Trash2 size={16} />
@@ -345,13 +453,33 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
                       </div>
                       <h3 className="text-lg font-bold text-slate-900 mb-2 line-clamp-2">{post.title}</h3>
                       <p className="text-slate-600 text-sm mb-4 line-clamp-3 flex-1">{post.content}</p>
+                      
+                      {(post as any).image_url && (
+                          <div className="mb-4 h-32 w-full rounded-lg overflow-hidden bg-slate-100 border border-slate-200">
+                              <img src={(post as any).image_url} alt="Anexo" className="w-full h-full object-cover" />
+                          </div>
+                      )}
+
                       <div className="flex items-center pt-4 border-t border-slate-100 mt-auto">
                           <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 mr-3">
                               <User size={16} />
                           </div>
-                          <div className="text-xs">
+                          <div className="text-xs flex-1">
                               <p className="font-medium text-slate-900">{post.profiles?.full_name || 'Anônimo'}</p>
                               <p className="text-slate-500">{post.institutions?.name || 'Instituição'}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                              <button 
+                                onClick={(e) => handleLike(e, post)}
+                                className="flex items-center text-slate-400 hover:text-pink-500 transition-colors text-xs"
+                              >
+                                  <ThumbsUp size={14} className="mr-1" /> {(post as any).likes || 0}
+                              </button>
+                              {currentUser && post.author_id === currentUser.id && (post as any).status !== 'resolved' && (
+                                  <button onClick={(e) => handleResolve(e, post)} className="text-green-600 hover:text-green-700 text-xs font-medium ml-2" title="Marcar como resolvido">
+                                      <CheckCircle size={16} />
+                                  </button>
+                              )}
                           </div>
                       </div>
                   </div>
@@ -362,6 +490,37 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
                   </div>
               )}
           </div>
+      )}
+      </>
+      ) : (
+        /* Directory Tab */
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
+                {institutionsList.map(inst => (
+                    <div key={inst.id} className="border border-slate-200 rounded-lg p-5 hover:border-[#458C57] transition-colors group">
+                        <div className="flex items-center mb-4">
+                            <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center text-[#458C57] mr-4 group-hover:bg-[#458C57] group-hover:text-white transition-colors">
+                                <Building2 size={24} />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-slate-900">{inst.name}</h3>
+                                <p className="text-xs text-slate-500">Resp: {inst.manager}</p>
+                            </div>
+                        </div>
+                        <div className="space-y-2 text-sm text-slate-600">
+                            <div className="flex items-center">
+                                <Phone size={14} className="mr-2 text-slate-400" />
+                                {inst.phone}
+                            </div>
+                            <div className="flex items-center">
+                                <Mail size={14} className="mr-2 text-slate-400" />
+                                {inst.email}
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
       )}
 
       {/* New Post Modal */}
@@ -408,8 +567,22 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
                             onChange={e => setNewPost({...newPost, content: e.target.value})}
                           />
                       </div>
+                      
+                      <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Imagem (Opcional)</label>
+                          <div className="flex items-center gap-4">
+                              <label className="cursor-pointer inline-flex items-center px-4 py-2 border border-slate-300 rounded-lg shadow-sm text-sm font-medium text-slate-700 bg-white hover:bg-slate-50">
+                                  <ImageIcon className="w-5 h-5 mr-2 text-slate-500" />
+                                  Escolher Imagem
+                                  <input type="file" className="hidden" accept="image/*" onChange={handleImageSelect} />
+                              </label>
+                              {imagePreview && (
+                                  <div className="h-10 w-10 rounded overflow-hidden border border-slate-200"><img src={imagePreview} className="h-full w-full object-cover" /></div>
+                              )}
+                          </div>
+                      </div>
                       <div className="flex justify-end pt-2">
-                          <button type="button" onClick={() => setShowNewPostModal(false)} className="mr-3 px-4 py-2 text-slate-700 hover:bg-slate-100 rounded-lg font-medium">Cancelar</button>
+                          <button type="button" onClick={() => { setShowNewPostModal(false); setSelectedImage(null); setImagePreview(null); }} className="mr-3 px-4 py-2 text-slate-700 hover:bg-slate-100 rounded-lg font-medium">Cancelar</button>
                           <button type="submit" disabled={submitting} className="px-4 py-2 bg-[#458C57] text-white rounded-lg hover:bg-[#367044] font-medium shadow-sm disabled:opacity-50">
                               {submitting ? 'Publicando...' : 'Publicar'}
                           </button>
@@ -449,6 +622,13 @@ const Community: React.FC<CommunityProps> = ({ isDemo }) => {
                               <p className="text-xs text-slate-500">{selectedPost.institutions?.name}</p>
                           </div>
                       </div>
+                      
+                      {(selectedPost as any).image_url && (
+                          <div className="mb-6 rounded-lg overflow-hidden border border-slate-200">
+                              <img src={(selectedPost as any).image_url} alt="Anexo" className="w-full object-contain max-h-96 bg-slate-50" />
+                          </div>
+                      )}
+
                       <p className="text-slate-700 whitespace-pre-wrap mb-8">{selectedPost.content}</p>
 
                       <h3 className="font-bold text-slate-800 mb-4 flex items-center">

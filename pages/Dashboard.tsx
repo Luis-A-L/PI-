@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { Child } from '../types';
-import { Plus, Search, Calendar, User, FileText, ArrowRight, Activity, ChevronLeft, ChevronRight, SortAsc, SortDesc, Eye, Edit, FilePlus } from 'lucide-react';
+import { Plus, Search, Calendar, User, FileText, ArrowRight, Activity, ChevronLeft, ChevronRight, SortAsc, SortDesc, Eye, Edit, FilePlus, AlertCircle, Users, Building2, Cake } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 interface DashboardProps {
@@ -10,11 +10,15 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
   const [children, setChildren] = useState<Child[]>([]);
+  const [overduePias, setOverduePias] = useState<Child[]>([]);
+  const [birthdaysToday, setBirthdaysToday] = useState<Child[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isHouseAdmin, setIsHouseAdmin] = useState(false);
 
   const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'age' | 'date'; direction: 'asc' | 'desc' } | null>(null);
 
@@ -23,6 +27,19 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
   }, [searchTerm, sortConfig]);
 
   useEffect(() => {
+    const checkRole = async () => {
+        if (isDemo) {
+            setIsAdmin(true); // Demo é admin por padrão
+        } else {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+                if (data && (data.role === 'admin' || data.role === 'master')) setIsHouseAdmin(true);
+                if (data && data.role === 'master') setIsAdmin(true);
+            }
+        }
+    };
+    checkRole();
     fetchChildren();
   }, [isDemo]);
 
@@ -31,7 +48,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
     
     if (isDemo) {
       setTimeout(() => {
-        setChildren([
+        const mockData = [
           { 
             id: '1', 
             full_name: 'Ana Clara Souza',
@@ -43,7 +60,8 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
             autos_number: '0001234-56.2023.8.16.0000',
             admission_reason_types: ['Negligência', 'Vulnerabilidade Social'],
             created_at: new Date().toISOString(),
-            child_photos: [{ url: 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?auto=format&fit=crop&w=150&q=80', created_at: new Date().toISOString() }]
+            child_photos: [{ url: 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?auto=format&fit=crop&w=150&q=80', created_at: new Date().toISOString() }],
+            last_pia_update: '2023-01-15' // Data antiga para testar o alerta
           } as any,
           { 
             id: '2', 
@@ -78,17 +96,30 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
             admission_reason_types: ['Orfandade'],
             created_at: new Date().toISOString(),
           } as any
-        ]);
+        ];
+        setChildren(mockData);
+        checkOverdue(mockData);
+        checkBirthdays(mockData);
         setLoading(false);
       }, 600);
       return;
     }
 
     try {
-      const { data, error } = await supabase
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: profile } = await supabase.from('profiles').select('institution_id').eq('id', user.id).single();
+
+      let query = supabase
         .from('children')
         .select('*, child_photos(url, created_at)')
         .order('entry_date', { ascending: false });
+      
+      if (profile && profile.institution_id) {
+          query = query.eq('institution_id', profile.institution_id);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       
@@ -97,11 +128,38 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
         child_photos: child.child_photos ? child.child_photos.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) : []
       })) || [];
       setChildren(childrenWithPhotos);
+      checkOverdue(childrenWithPhotos);
+      checkBirthdays(childrenWithPhotos);
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const checkOverdue = (childrenData: any[]) => {
+    const today = new Date();
+    const overdue = childrenData.filter(child => {
+      if (!child.last_pia_update) return false;
+      const lastUpdate = new Date(child.last_pia_update);
+      const nextDue = new Date(lastUpdate);
+      nextDue.setMonth(nextDue.getMonth() + 3);
+      return today >= nextDue;
+    });
+    setOverduePias(overdue);
+  };
+
+  const checkBirthdays = (childrenData: Child[]) => {
+    const today = new Date();
+    const currentDay = today.getDate();
+    const currentMonth = today.getMonth() + 1; // Janeiro é 0
+
+    const birthdays = childrenData.filter(child => {
+      if (!child.birth_date) return false;
+      const [year, month, day] = child.birth_date.split('-').map(Number);
+      return day === currentDay && month === currentMonth;
+    });
+    setBirthdaysToday(birthdays);
   };
 
   const getAgeNumber = (birthDate: string) => {
@@ -207,56 +265,128 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      
+      {/* Birthday Alert */}
+      {birthdaysToday.length > 0 && (
+        <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex items-start animate-in slide-in-from-top-2 shadow-sm">
+            <div className="flex-shrink-0 p-1">
+                <Cake className="h-6 w-6 text-yellow-600" />
+            </div>
+            <div className="ml-3">
+                <h3 className="text-sm font-bold text-yellow-800">Feliz Aniversário! 🎉</h3>
+                <div className="mt-1 text-sm text-yellow-700">
+                    <p>Hoje é o dia especial de:</p>
+                    <ul className="list-disc pl-5 mt-1">
+                        {birthdaysToday.map(child => (
+                            <li key={child.id} className="font-medium">
+                                {child.full_name} ({calculateAge(child.birth_date)})
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            </div>
+        </div>
+      )}
+
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex items-center">
-            <div className="p-3 rounded-full bg-blue-50 text-blue-600 mr-4">
-                <User size={24} />
-            </div>
+        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex items-center justify-between">
             <div>
                 <p className="text-sm font-medium text-slate-500">Total Acolhidos</p>
-                <p className="text-2xl font-bold text-slate-800">{loading ? '...' : children.length}</p>
+                <p className="text-3xl font-bold text-slate-900 mt-2">{loading ? '...' : children.length}</p>
+                <p className="text-xs text-slate-400 mt-1">Registros ativos</p>
+            </div>
+            <div className="p-3 bg-green-50 rounded-lg text-[#458C57]">
+                <User size={24} />
             </div>
         </div>
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex items-center">
-            <div className="p-3 rounded-full bg-green-50 text-green-600 mr-4">
-                <Activity size={24} />
-            </div>
+        
+        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex items-center justify-between">
             <div>
                 <p className="text-sm font-medium text-slate-500">Relatórios Ativos</p>
-                <p className="text-2xl font-bold text-slate-800">{loading ? '...' : Math.floor(children.length * 0.8)}</p>
+                <p className="text-3xl font-bold text-slate-900 mt-2">{loading ? '...' : Math.floor(children.length * 0.8)}</p>
+                <p className="text-xs text-slate-400 mt-1">PIAs em dia</p>
+            </div>
+            <div className="p-3 bg-green-50 rounded-lg text-green-600">
+                <Activity size={24} />
             </div>
         </div>
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex items-center justify-between group cursor-pointer hover:border-[#63BF7A] transition-colors" onClick={() => document.getElementById('new-admission-btn')?.click()}>
-            <div>
-                <p className="text-sm font-medium text-slate-500">Ação Rápida</p>
-                <p className="text-lg font-bold text-[#458C57]">Cadastro de Criança</p>
-            </div>
-            <div className="p-2 rounded-full bg-[#88F2A2]/10 text-[#458C57] group-hover:bg-[#458C57] group-hover:text-white transition-colors">
-                <Plus size={20} />
-            </div>
-        </div>
+
+        {isHouseAdmin && (
+            <Link to="/gestao-casa" className="bg-[#458C57] rounded-xl p-6 shadow-sm flex items-center justify-between cursor-pointer hover:bg-[#3d7a4c] transition-colors group">
+                <div>
+                    <p className="text-sm font-medium text-green-100">Administração</p>
+                    <p className="text-2xl font-bold text-white mt-1">Gestão da Casa</p>
+                    <p className="text-xs text-green-100 mt-1 opacity-80">Configurações e Financeiro</p>
+                </div>
+                <div className="p-3 bg-white/10 rounded-lg text-white group-hover:bg-white/20 transition-colors">
+                    <Building2 size={24} />
+                </div>
+            </Link>
+        )}
       </div>
+
+      {/* Overdue PIA Alerts */}
+      {overduePias.length > 0 && (
+        <div className="mb-6 bg-red-50 border border-red-100 rounded-xl p-4 flex items-start">
+          <div className="flex items-start">
+            <div className="flex-shrink-0">
+              <AlertCircle className="h-5 w-5 text-red-600" aria-hidden="true" />
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-semibold text-red-800">Atenção: Reavaliação de PIA Necessária</h3>
+              <div className="mt-1 text-sm text-red-700">
+                <p>Os seguintes acolhidos precisam de atualização no PIA (vencimento de 3 meses):</p>
+                <ul className="list-disc pl-5 space-y-1 mt-1">
+                  {overduePias.map(child => (
+                    <li key={child.id}>
+                      <Link to={`/acolhido/${child.id}`} className="font-bold hover:underline">
+                        {child.full_name}
+                      </Link>
+                      <span className="text-xs ml-2 opacity-75">
+                        (Última atualização: {new Date((child as any).last_pia_update).toLocaleDateString('pt-BR')})
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Lista de Acolhidos</h1>
-          <p className="text-slate-500 mt-1 text-sm">Gerencie os registros ativos da instituição.</p>
+          <p className="text-slate-500 text-sm mt-1">Gerencie os registros ativos da instituição.</p>
         </div>
         
+        <div className="flex gap-3">
+            {isHouseAdmin && (
+                <>
+                <Link 
+                  to="/equipe" 
+                  className="inline-flex items-center px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#458C57] transition-colors shadow-sm"
+                >
+                  <Users className="w-5 h-5 mr-2" />
+                  Minha Equipe
+                </Link>
+                </>
+            )}
         <Link 
           id="new-admission-btn"
           to="/cadastro-crianca" 
-          className="inline-flex items-center justify-center px-5 py-2.5 bg-[#458C57] hover:bg-[#367044] text-white text-sm font-semibold rounded-lg shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#458C57]"
+          className="inline-flex items-center px-4 py-2 border border-transparent rounded-lg text-sm font-medium text-white bg-[#458C57] hover:bg-[#367044] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#458C57] shadow-sm transition-colors"
         >
           <Plus className="w-5 h-5 mr-2" />
           Cadastro de Criança
         </Link>
+        </div>
       </div>
 
       {/* Filters */}
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6">
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6">
         <div className="flex flex-col md:flex-row gap-4">
           <div className="relative flex-1">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -264,7 +394,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
             </div>
             <input
               type="text"
-              className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-lg leading-5 bg-white placeholder-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#458C57] focus:border-transparent sm:text-sm"
+              className="block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg leading-5 bg-white placeholder-slate-400 text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#458C57] focus:border-[#458C57] sm:text-sm transition-colors"
               placeholder="Buscar por nome, autos..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -274,10 +404,10 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
           <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0">
              <button
                 onClick={() => handleSort('name')}
-                className={`px-4 py-2.5 rounded-lg font-medium text-sm transition-colors flex items-center whitespace-nowrap ${
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center whitespace-nowrap ${
                     sortConfig?.key === 'name'
-                    ? 'bg-[#458C57] text-white hover:bg-[#367044]' 
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300'
+                    ? 'bg-[#458C57] text-white' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
              >
                 {sortConfig?.key === 'name' && sortConfig.direction === 'desc' ? <SortDesc className="w-4 h-4 mr-2"/> : <SortAsc className="w-4 h-4 mr-2"/>}
@@ -286,10 +416,10 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
 
              <button
                 onClick={() => handleSort('age')}
-                className={`px-4 py-2.5 rounded-lg font-medium text-sm transition-colors flex items-center whitespace-nowrap ${
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center whitespace-nowrap ${
                     sortConfig?.key === 'age'
-                    ? 'bg-[#458C57] text-white hover:bg-[#367044]' 
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300'
+                    ? 'bg-[#458C57] text-white' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
              >
                 {sortConfig?.key === 'age' && sortConfig.direction === 'asc' ? <SortAsc className="w-4 h-4 mr-2"/> : <SortDesc className="w-4 h-4 mr-2"/>}
@@ -298,10 +428,10 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
 
              <button
                 onClick={() => handleSort('date')}
-                className={`px-4 py-2.5 rounded-lg font-medium text-sm transition-colors flex items-center whitespace-nowrap ${
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center whitespace-nowrap ${
                     sortConfig?.key === 'date'
-                    ? 'bg-[#458C57] text-white hover:bg-[#367044]' 
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300'
+                    ? 'bg-[#458C57] text-white' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
              >
                 {sortConfig?.key === 'date' && sortConfig.direction === 'asc' ? <SortAsc className="w-4 h-4 mr-2"/> : <SortDesc className="w-4 h-4 mr-2"/>}
@@ -318,7 +448,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
       )}
 
       {/* Data Table */}
-      <div className="bg-white shadow-sm border border-slate-200 rounded-xl overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-slate-500 flex justify-center">
              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#458C57]"></div>
@@ -336,16 +466,16 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
             <table className="min-w-full divide-y divide-slate-200">
               <thead className="bg-slate-50">
                 <tr>
-                  <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
                     Nome / Idade
                   </th>
-                  <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
                     Data Entrada
                   </th>
-                  <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
                     Motivo
                   </th>
-                  <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
                     Autos / Observações
                   </th>
                   <th scope="col" className="relative px-6 py-4">
@@ -355,10 +485,10 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
               </thead>
               <tbody className="bg-white divide-y divide-slate-200">
                 {paginatedChildren.map((child) => (
-                  <tr key={child.id} className="hover:bg-slate-50 transition-colors group">
+                  <tr key={child.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
-                        <div className={`flex-shrink-0 h-16 w-16 rounded-full flex items-center justify-center font-bold text-xl shadow-sm border-2 overflow-hidden ${child.sex === 'F' ? 'bg-pink-50 text-pink-600 border-pink-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                        <div className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center font-bold text-sm shadow-sm overflow-hidden ${child.sex === 'F' ? 'bg-pink-50 text-pink-600' : 'bg-blue-50 text-blue-600'}`}>
                           {(child as any).child_photos && (child as any).child_photos.length > 0 ? (
                             <img src={(child as any).child_photos[0].url} alt={child.full_name} className="h-full w-full object-cover" />
                           ) : (
@@ -366,14 +496,14 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
                           )}
                         </div>
                         <div className="ml-4">
-                          <Link to={`/acolhido/${child.id}`} className="text-sm font-bold text-slate-900 hover:text-[#458C57] hover:underline">
+                          <Link to={`/acolhido/${child.id}`} className="text-sm font-bold text-slate-900 hover:text-[#458C57] transition-colors">
                             {child.full_name}
                           </Link>
-                          <div className="text-xs text-slate-500 font-medium bg-slate-100 px-2 py-0.5 rounded-full inline-block mt-1">
+                          <div className="text-xs text-slate-500 mt-0.5">
                             {calculateAge(child.birth_date)} • {formatDate(child.birth_date)}
                           </div>
                           {child.pia_status === 'draft' && (
-                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">Rascunho</span>
+                            <span className="mt-1 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-yellow-100 text-yellow-800">Rascunho</span>
                           )}
                         </div>
                       </div>
@@ -407,14 +537,14 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
                         <div className="flex items-center justify-end gap-1">
                           <Link 
                             to={`/acolhido/${child.id}`} 
-                            className="p-2 text-slate-400 hover:text-[#458C57] hover:bg-slate-100 rounded-lg transition-colors" 
+                            className="p-1.5 text-slate-400 hover:text-[#458C57] hover:bg-green-50 rounded-md transition-colors" 
                             title="Ver PIA"
                           >
                             <Eye className="w-4 h-4" />
                           </Link>
                           <Link 
                             to="/relatorios" 
-                            className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" 
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors" 
                             title="Relatório Técnico"
                           >
                             <FileText className="w-4 h-4" />
@@ -422,7 +552,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
                           <Link 
                             to={`/acolhido/${child.id}`} 
                             state={{ edit: true }}
-                            className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" 
+                            className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors" 
                             title="Editar PIA"
                           >
                             <Edit className="w-4 h-4" />
@@ -431,7 +561,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
                         <Link 
                           to={`/acolhido/${child.id}`} 
                           state={{ edit: true, renew: true }}
-                          className="flex items-center justify-center px-3 py-1.5 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-md transition-colors text-xs font-medium w-full" 
+                          className="flex items-center justify-center px-2 py-1 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded border border-purple-200 transition-colors text-xs font-medium w-full" 
                           title="Reavaliação"
                         >
                           <FilePlus className="w-3 h-3 mr-1" />
@@ -472,11 +602,9 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
               <div>
                 <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
                   <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="relative inline-flex items-center rounded-l-md px-2 py-2 text-slate-400 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50 hover:text-slate-700">
-                    <span className="sr-only">Anterior</span>
                     <ChevronLeft className="h-5 w-5" aria-hidden="true" />
                   </button>
                   <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="relative inline-flex items-center rounded-r-md px-2 py-2 text-slate-400 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50 hover:text-slate-700">
-                    <span className="sr-only">Próxima</span>
                     <ChevronRight className="h-5 w-5" aria-hidden="true" />
                   </button>
                 </nav>
@@ -485,9 +613,9 @@ const Dashboard: React.FC<DashboardProps> = ({ isDemo }) => {
           </div>
         )}
       </div>
-      <div className="mt-6 flex justify-between items-center text-xs text-slate-400">
-         <span>Sistema protegido por Criptografia de Ponta a Ponta.</span>
-         <span>LGPD Compliance v2.4</span>
+      <div className="mt-8 flex justify-between items-center text-xs text-slate-400 px-4">
+         <span>&copy; 2024 Curitiba Acolhe. Protegido por Criptografia.</span>
+         <span>v2.4.0</span>
       </div>
     </div>
   );

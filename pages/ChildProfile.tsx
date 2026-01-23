@@ -489,6 +489,11 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!window.confirm("Ao salvar este PIA, será iniciada a contagem de 3 meses para a próxima reavaliação. Deseja continuar?")) {
+        return;
+    }
+
     setIsSubmitting(true);
     setError(null);
 
@@ -508,7 +513,11 @@ const ChildProfile: React.FC<ChildProfileProps> = ({ isDemo }) => {
       const { data: profile } = await supabase.from('profiles').select('institution_id').eq('id', user.id).single();
 
       // Clean data based on logic
-      const payload = { ...formData, pia_status: submitAction.current };
+      const payload = { 
+          ...formData, 
+          pia_status: submitAction.current,
+          last_pia_update: new Date().toISOString()
+      };
 
       // Sanitize date fields (convert empty strings to null)
       if (payload.birth_date === '') payload.birth_date = null as any;

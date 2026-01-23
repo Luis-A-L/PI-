@@ -9,7 +9,7 @@ export interface Profile {
   id: string; // UUID, references auth.users
   institution_id: string; // References institutions
   full_name: string;
-  role: 'admin' | 'staff';
+  role: 'master' | 'admin' | 'staff';
 }
 
 // Sub-types for dynamic tables in PIA

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { Building2, Plus, Trash2, X, User, Eye } from 'lucide-react';
+import { Building2, Plus, Trash2, X, User, Eye, Mail, Shield, Send, Users, Link as LinkIcon, Copy } from 'lucide-react';
 
 interface AdminHousesProps {
   isDemo?: boolean;
@@ -13,16 +13,26 @@ interface Institution {
   phone: string;
   manager: string;
   active: boolean;
+  cnpj?: string;
 }
 
 const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [formData, setFormData] = useState({ name: '', email: '', phone: '', manager: '' });
+  const [formData, setFormData] = useState({ name: '', email: '', phone: '', manager: '', cnpj: '' });
   const [selectedInstitution, setSelectedInstitution] = useState<Institution | null>(null);
   const [institutionChildren, setInstitutionChildren] = useState<any[]>([]);
   const [loadingChildren, setLoadingChildren] = useState(false);
+  const [institutionUsers, setInstitutionUsers] = useState<any[]>([]);
+  
+  // Access Management State
+  const [showAccessModal, setShowAccessModal] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteName, setInviteName] = useState('');
+  const [inviteCpf, setInviteCpf] = useState('');
+  const [isInviting, setIsInviting] = useState(false);
+  const [generatedLink, setGeneratedLink] = useState('');
 
   useEffect(() => {
     fetchInstitutions();
@@ -30,39 +40,80 @@ const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
 
   const fetchInstitutions = async () => {
     setLoading(true);
-    if (isDemo) {
-      setTimeout(() => {
-        setInstitutions([
-          { id: '1', name: 'Lar Esperança', email: 'contato@laresperanca.org', phone: '(41) 3333-3333', manager: 'Maria Silva', active: true },
-          { id: '2', name: 'Casa do Menino', email: 'adm@casadomenino.org', phone: '(41) 3333-4444', manager: 'João Santos', active: true },
-        ]);
-        setLoading(false);
-      }, 500);
-      return;
+    // Removido bloco de demonstração para buscar sempre do banco
+    const { data, error } = await supabase.from('institutions').select('*').order('name');
+    if (error) {
+        console.error("Erro ao buscar instituições:", error);
     }
-    
-    const { data, error } = await supabase.from('institutions').select('*');
     if (!error && data) setInstitutions(data);
     setLoading(false);
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isDemo) {
-      const newInst = { ...formData, id: Math.random().toString(), active: true };
-      setInstitutions([...institutions, newInst]);
-      setShowModal(false);
-      setFormData({ name: '', email: '', phone: '', manager: '' });
-      return;
-    }
-
-    const { error } = await supabase.from('institutions').insert([formData]);
+    // Removido bloco de demonstração para salvar sempre no banco
+    const { error } = await supabase.from('institutions').insert([{ ...formData, active: true }]);
     if (!error) {
       fetchInstitutions();
       setShowModal(false);
-      setFormData({ name: '', email: '', phone: '', manager: '' });
+      setFormData({ name: '', email: '', phone: '', manager: '', cnpj: '' });
     } else {
-      alert('Erro ao salvar');
+      console.error("Erro ao salvar:", error);
+      alert('Erro ao salvar: ' + (error.message || JSON.stringify(error)));
+    }
+  };
+
+  const handleOpenAccess = (inst: Institution) => {
+    setSelectedInstitution(inst);
+    setShowAccessModal(true);
+    setInviteEmail('');
+    setInviteName('');
+    setInviteCpf('');
+    setGeneratedLink('');
+  };
+
+  const handleSendInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteEmail || !selectedInstitution) return;
+    setIsInviting(true);
+
+    try {
+        // 1. Criar registro na tabela de convites
+        const { data, error } = await supabase.from('house_invites').insert([{
+            institution_id: selectedInstitution.id,
+            email: inviteEmail,
+            full_name: inviteName,
+            cpf: inviteCpf,
+            role: 'admin' // Master convida Admin
+        }]).select().single();
+
+        if (error) throw error;
+
+        // 2. Gerar Link
+        const link = `${window.location.origin}/#/cadastro-convite?token=${data.token}`;
+        setGeneratedLink(link);
+        
+    } catch (err: any) {
+        console.error("Erro ao enviar convite:", err);
+        alert("Erro ao gerar convite: " + err.message);
+    } finally {
+        setIsInviting(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm('Tem certeza que deseja remover este usuário? Ele perderá o acesso ao sistema.')) return;
+
+    if (isDemo) {
+        setInstitutionUsers(institutionUsers.filter(u => u.id !== userId));
+        return;
+    }
+
+    const { error } = await supabase.from('profiles').delete().eq('id', userId);
+    if (error) {
+        alert('Erro ao remover usuário: ' + error.message);
+    } else {
+        setInstitutionUsers(institutionUsers.filter(u => u.id !== userId));
     }
   };
 
@@ -70,17 +121,11 @@ const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
     setSelectedInstitution(inst);
     setLoadingChildren(true);
     
-    if (isDemo) {
-      setTimeout(() => {
-        setInstitutionChildren([
-          { id: 'c1', full_name: 'Enzo Gabriel', birth_date: '2015-03-10', entry_date: '2023-01-15', sex: 'M', child_photos: [{ url: 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?auto=format&fit=crop&w=150&q=80' }] },
-          { id: 'c2', full_name: 'Valentina Pereira', birth_date: '2018-07-22', entry_date: '2023-06-10', sex: 'F', child_photos: [] }
-        ]);
-        setLoadingChildren(false);
-      }, 400);
-      return;
-    }
-    
+    // Buscar usuários da instituição
+    const { data: users } = await supabase.from('profiles').select('*').eq('institution_id', inst.id);
+    if (users) setInstitutionUsers(users);
+
+    // Removido bloco de demonstração para buscar crianças reais
     const { data, error } = await supabase
       .from('children')
       .select('*, child_photos(url, created_at)')
@@ -97,13 +142,13 @@ const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
   };
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="max-w-6xl mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Gestão de Casas</h1>
           <p className="text-slate-500">Cadastre e gerencie as instituições de acolhimento.</p>
         </div>
-        <button onClick={() => setShowModal(true)} className="bg-[#458C57] text-white px-4 py-2 rounded-lg flex items-center hover:bg-[#367044] shadow-sm transition-colors">
+        <button onClick={() => setShowModal(true)} className="rounded-lg bg-[#458C57] px-4 py-2 text-sm font-medium text-white hover:bg-[#367044] focus:outline-none focus:ring-2 focus:ring-[#458C57] focus:ring-offset-2 shadow-sm transition-all flex items-center">
           <Plus className="w-5 h-5 mr-2" /> Nova Casa
         </button>
       </div>
@@ -123,7 +168,7 @@ const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
             {loading ? (
               <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500">Carregando instituições...</td></tr>
             ) : institutions.length === 0 ? (
-              <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500">Nenhuma instituição cadastrada.</td></tr>
+              <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-500">Nenhuma instituição cadastrada.</td></tr>
             ) : institutions.map((inst) => (
               <tr key={inst.id} onClick={() => handleOpenDetails(inst)} className="hover:bg-slate-50 transition-colors cursor-pointer group">
                 <td className="px-6 py-4 whitespace-nowrap">
@@ -146,6 +191,7 @@ const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <div className="flex items-center justify-end space-x-2">
+                    <button onClick={(e) => { e.stopPropagation(); handleOpenAccess(inst); }} className="text-slate-400 hover:text-blue-600 p-2 hover:bg-blue-50 rounded-full transition-colors" title="Gerenciar Acesso"><Shield size={18} /></button>
                     <button onClick={(e) => { e.stopPropagation(); handleOpenDetails(inst); }} className="text-slate-400 hover:text-[#458C57] p-2 hover:bg-slate-100 rounded-full transition-colors"><Eye size={18} /></button>
                     <button onClick={(e) => e.stopPropagation()} className="text-red-400 hover:text-red-600 p-2 hover:bg-red-50 rounded-full transition-colors"><Trash2 size={18} /></button>
                   </div>
@@ -163,33 +209,38 @@ const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
               <h3 className="text-lg font-bold text-slate-900">Nova Instituição</h3>
               <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600"><X size={24} /></button>
             </div>
+            
             <form onSubmit={handleSave} className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">Nome da Instituição</label>
-                <input required type="text" className="w-full border-slate-300 rounded-lg focus:ring-[#458C57] focus:border-[#458C57]" placeholder="Ex: Lar Esperança" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+                <label className="block text-sm font-bold text-slate-700 mb-2">Nome da Instituição</label>
+                <input required type="text" className="block w-full rounded-lg border-slate-300 bg-slate-50 px-4 py-2.5 text-sm focus:border-[#458C57] focus:ring-[#458C57] focus:ring-1 focus:outline-none transition-all" placeholder="Ex: Lar Esperança" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">Nome do Responsável</label>
-                <input required type="text" className="w-full border-slate-300 rounded-lg focus:ring-[#458C57] focus:border-[#458C57]" placeholder="Nome completo" value={formData.manager} onChange={e => setFormData({...formData, manager: e.target.value})} />
+                <label className="block text-sm font-bold text-slate-700 mb-2">CNPJ</label>
+                <input required type="text" className="block w-full rounded-lg border-slate-300 bg-slate-50 px-4 py-2.5 text-sm focus:border-[#458C57] focus:ring-[#458C57] focus:ring-1 focus:outline-none transition-all" placeholder="00.000.000/0000-00" value={formData.cnpj} onChange={e => setFormData({...formData, cnpj: e.target.value})} />
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">E-mail Institucional</label>
-                <input required type="email" className="w-full border-slate-300 rounded-lg focus:ring-[#458C57] focus:border-[#458C57]" placeholder="email@instituicao.org" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+                <label className="block text-sm font-bold text-slate-700 mb-2">Nome do Responsável</label>
+                <input required type="text" className="block w-full rounded-lg border-slate-300 bg-slate-50 px-4 py-2.5 text-sm focus:border-[#458C57] focus:ring-[#458C57] focus:ring-1 focus:outline-none transition-all" placeholder="Nome completo" value={formData.manager} onChange={e => setFormData({...formData, manager: e.target.value})} />
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">Telefone</label>
-                <input required type="text" className="w-full border-slate-300 rounded-lg focus:ring-[#458C57] focus:border-[#458C57]" placeholder="(00) 0000-0000" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
+                <label className="block text-sm font-bold text-slate-700 mb-2">E-mail Institucional</label>
+                <input required type="email" className="block w-full rounded-lg border-slate-300 bg-slate-50 px-4 py-2.5 text-sm focus:border-[#458C57] focus:ring-[#458C57] focus:ring-1 focus:outline-none transition-all" placeholder="email@instituicao.org" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Telefone</label>
+                <input required type="text" className="block w-full rounded-lg border-slate-300 bg-slate-50 px-4 py-2.5 text-sm focus:border-[#458C57] focus:ring-[#458C57] focus:ring-1 focus:outline-none transition-all" placeholder="(00) 0000-0000" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
               </div>
               <div className="flex justify-end pt-4 gap-3">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-slate-700 hover:bg-slate-100 rounded-lg font-medium border border-slate-300">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-[#458C57] text-white rounded-lg hover:bg-[#367044] font-medium shadow-sm">Salvar Cadastro</button>
+                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Cancelar</button>
+                <button type="submit" className="rounded-lg bg-[#458C57] px-4 py-2 text-sm font-medium text-white hover:bg-[#367044] focus:outline-none focus:ring-2 focus:ring-[#458C57] focus:ring-offset-2 shadow-sm transition-all">Salvar Cadastro</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {selectedInstitution && (
+      {selectedInstitution && !showAccessModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden">
             <div className="flex justify-between items-center p-6 border-b border-slate-200 bg-slate-50">
@@ -223,6 +274,55 @@ const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
                             {selectedInstitution.active ? 'Ativo' : 'Inativo'}
                         </span>
                     </div>
+                </div>
+
+                {/* Users List */}
+                <div className="flex justify-between items-center mt-8 mb-4">
+                    <h4 className="text-lg font-bold text-slate-800 flex items-center">
+                        <Users className="w-5 h-5 mr-2" />
+                        Equipe / Responsáveis ({institutionUsers.length})
+                    </h4>
+                    <button 
+                        onClick={() => handleOpenAccess(selectedInstitution)}
+                        className="text-sm bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-100 font-medium flex items-center transition-colors"
+                    >
+                        <Plus size={16} className="mr-1" />
+                        Novo Admin
+                    </button>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-lg overflow-hidden mb-8">
+                    <table className="min-w-full divide-y divide-slate-200">
+                        <thead className="bg-slate-50">
+                            <tr>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Nome</th>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Email</th>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Função</th>
+                                <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                            {institutionUsers.length === 0 ? (
+                                <tr><td colSpan={4} className="px-6 py-4 text-center text-slate-500">Nenhum usuário vinculado.</td></tr>
+                            ) : (
+                                institutionUsers.map((user) => (
+                                    <tr key={user.id} className="hover:bg-slate-50">
+                                        <td className="px-6 py-4 text-sm font-medium text-slate-900">{user.full_name}</td>
+                                        <td className="px-6 py-4 text-sm text-slate-600">{user.email}</td>
+                                        <td className="px-6 py-4 text-sm text-slate-600">
+                                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${user.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
+                                                {user.role === 'admin' ? 'Administrador' : 'Equipe'}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 text-sm text-right">
+                                            <button onClick={() => handleDeleteUser(user.id)} className="text-red-400 hover:text-red-600 p-1 transition-colors" title="Remover usuário">
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
                 </div>
 
                 {/* Children List */}
@@ -275,6 +375,82 @@ const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
                 <button onClick={() => setSelectedInstitution(null)} className="px-4 py-2 bg-white border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 font-medium">Fechar</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Access Management Modal */}
+      {showAccessModal && selectedInstitution && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+                <div className="p-6 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                    <div>
+                        <h3 className="text-lg font-bold text-slate-900">Acesso: {selectedInstitution.name}</h3>
+                        <p className="text-sm text-slate-500">Convidar Presidente/Administrador</p>
+                    </div>
+                    <button onClick={() => { setShowAccessModal(false); setSelectedInstitution(null); }} className="text-slate-400 hover:text-slate-600"><X size={24} /></button>
+                </div>
+
+                <div className="p-6">
+                    {!generatedLink ? (
+                    <>
+                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-6">
+                        <p className="text-sm text-blue-800">
+                            Preencha os dados abaixo para gerar um <strong>Link de Convite</strong>. Envie este link para o novo administrador se cadastrar.
+                        </p>
+                    </div>
+                    
+                    <form onSubmit={handleSendInvite}>
+                        <div className="mb-4">
+                            <label className="block text-sm font-bold text-slate-700 mb-2">Nome Completo</label>
+                            <input required type="text" className="block w-full rounded-lg border-slate-300 bg-slate-50 px-4 py-2.5 text-sm focus:border-[#458C57] focus:ring-[#458C57] focus:ring-1 focus:outline-none transition-all" placeholder="Nome do responsável" value={inviteName} onChange={(e) => setInviteName(e.target.value)} />
+                        </div>
+                        <div className="mb-4">
+                            <label className="block text-sm font-bold text-slate-700 mb-2">CPF</label>
+                            <input required type="text" className="block w-full rounded-lg border-slate-300 bg-slate-50 px-4 py-2.5 text-sm focus:border-[#458C57] focus:ring-[#458C57] focus:ring-1 focus:outline-none transition-all" placeholder="000.000.000-00" value={inviteCpf} onChange={(e) => setInviteCpf(e.target.value)} />
+                        </div>
+                        <label className="block text-sm font-bold text-slate-700 mb-2">E-mail do Presidente</label>
+                        <div className="flex gap-2">
+                            <div className="relative flex-1">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <Mail className="h-5 w-5 text-slate-400" />
+                                </div>
+                                <input 
+                                    type="email" 
+                                    required
+                                    className="block w-full pl-10 rounded-lg border-slate-300 bg-slate-50 px-4 py-2.5 text-sm focus:border-[#458C57] focus:ring-[#458C57] focus:ring-1 focus:outline-none transition-all" 
+                                    placeholder="presidente@instituicao.org"
+                                    value={inviteEmail}
+                                    onChange={(e) => setInviteEmail(e.target.value)}
+                                />
+                            </div>
+                            <button 
+                                type="submit" 
+                                disabled={isInviting}
+                                className="rounded-lg bg-[#458C57] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#367044] focus:outline-none focus:ring-2 focus:ring-[#458C57] focus:ring-offset-2 shadow-sm transition-all disabled:opacity-50"
+                            >
+                                {isInviting ? 'Gerando...' : <><LinkIcon size={18} className="mr-2"/> Gerar Link</>}
+                            </button>
+                        </div>
+                    </form>
+                    </>
+                    ) : (
+                        <div className="text-center">
+                            <div className="mx-auto w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mb-4 text-green-600">
+                                <Check size={24} />
+                            </div>
+                            <h3 className="text-lg font-bold text-slate-900 mb-2">Link Gerado com Sucesso!</h3>
+                            <p className="text-sm text-slate-500 mb-4">Copie o link abaixo e envie para <strong>{inviteName}</strong>:</p>
+                            
+                            <div className="flex items-center gap-2 bg-slate-100 p-3 rounded-lg border border-slate-200 mb-6">
+                                <input type="text" readOnly value={generatedLink} className="bg-transparent border-none w-full text-sm text-slate-600 focus:ring-0" />
+                                <button onClick={() => navigator.clipboard.writeText(generatedLink)} className="text-[#458C57] hover:text-[#367044] font-bold text-sm flex items-center"><Copy size={16} className="mr-1"/> Copiar</button>
+                            </div>
+                            
+                            <button onClick={() => { setShowAccessModal(false); setGeneratedLink(''); setSelectedInstitution(null); }} className="w-full py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50">Fechar</button>
+                        </div>
+                    )}
+                </div>
+            </div>
         </div>
       )}
     </div>
