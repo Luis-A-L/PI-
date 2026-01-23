@@ -10,7 +10,7 @@ import Reports from './pages/Reports';
 import ChildProfile from './pages/ChildProfile';
 import Community from './pages/Community';
 import AdminHouses from './pages/AdminHouses';
-import Team from './pages/Team';
+import Team from './pages/team';
 import UpdatePassword from './pages/UpdatePassword';
 import HouseManagement from './pages/HouseManagement';
 import RegisterInvite from './pages/RegisterInvite';
