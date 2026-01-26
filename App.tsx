@@ -11,7 +11,6 @@ import ChildProfile from './pages/ChildProfile';
 import Community from './pages/Community';
 import AdminHouses from './pages/AdminHouses';
 import Team from './pages/team';
-import UpdatePassword from './pages/UpdatePassword';
 import HouseManagement from './pages/HouseManagement';
 import RegisterInvite from './pages/RegisterInvite';
 import Layout from './components/Layout';
@@ -23,7 +22,6 @@ const App: React.FC = () => {
   const [isDemo, setIsDemo] = useState<boolean>(false);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
-  const [needsSetup, setNeedsSetup] = useState(false);
 
   useEffect(() => {
     // Configurar Favicon e Título
@@ -44,7 +42,6 @@ const App: React.FC = () => {
 
     if (adminActive) {
       setIsAdmin(true);
-      setIsDemo(true); // Admin usa modo demo para dados fictícios neste MVP
     } else if (demoActive) {
       setIsDemo(true);
     }
@@ -54,17 +51,8 @@ const App: React.FC = () => {
       return;
     }
 
-    const checkProfile = async (uid: string) => {
-        // Verifica se o usuário já tem um perfil vinculado
-        const { data } = await supabase.from('profiles').select('id').eq('id', uid).maybeSingle();
-        // Se não tiver perfil, precisa de setup (definir senha/criar perfil)
-        if (!data) setNeedsSetup(true);
-        else setNeedsSetup(false);
-    };
-
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session?.user) checkProfile(session.user.id);
       setLoading(false);
     });
 
@@ -72,7 +60,6 @@ const App: React.FC = () => {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      if (session?.user) checkProfile(session.user.id);
     });
 
     return () => subscription.unsubscribe();
@@ -86,7 +73,7 @@ const App: React.FC = () => {
   const handleAdminLogin = () => {
     localStorage.setItem('admin_mode', 'true');
     setIsAdmin(true);
-    setIsDemo(true);
+    setIsDemo(false);
   };
 
   const handleLogout = async () => {
@@ -143,21 +130,25 @@ const App: React.FC = () => {
           element={!isAuthenticated ? <Login onDemoLogin={handleDemoLogin} onAdminLogin={handleAdminLogin} /> : <Navigate to={isAdmin ? "/admin/casas" : "/"} replace />} 
         />
         
-        {/* Rota de Primeiro Acesso / Definição de Senha (Sem Layout para forçar a ação) */}
-        <Route element={isAuthenticated ? <Outlet /> : <Navigate to="/login" replace />}>
-             <Route path="/definir-senha" element={<UpdatePassword />} />
-        </Route>
-        
         {/* Rota Pública de Aceite de Convite */}
         <Route path="/cadastro-convite" element={<RegisterInvite />} />
         
         {/* Protected Routes with Layout */}
         <Route element={isAuthenticated ? (
-            // Se estiver autenticado mas precisar de setup (perfil inexistente), força ir para definir senha
-            (session && needsSetup) ? <Navigate to="/definir-senha" replace /> : <Layout onLogout={handleLogout} isDemo={isDemo} isAdmin={isAdmin} />
+            <Layout onLogout={handleLogout} isDemo={isDemo} isAdmin={isAdmin} />
         ) : <Navigate to="/login" replace />}>
           {isAdmin ? (
-             <Route path="/admin/casas" element={<AdminHouses isDemo={isDemo} />} />
+             <>
+               <Route path="/admin/casas" element={<AdminHouses isDemo={isDemo} />} />
+               <Route path="/" element={<Dashboard isDemo={isDemo} />} />
+               <Route path="/novo-acolhimento" element={<NewAdmission isDemo={isDemo} />} />
+               <Route path="/cadastro-crianca" element={<ChildRegistration isDemo={isDemo} />} />
+               <Route path="/acolhido/:id" element={<ChildProfile isDemo={isDemo} />} />
+               <Route path="/relatorios" element={<Reports isDemo={isDemo} />} />
+               <Route path="/comunidade" element={<Community isDemo={isDemo} />} />
+               <Route path="/equipe" element={<Team isDemo={isDemo} />} />
+               <Route path="/gestao-casa" element={<HouseManagement />} />
+             </>
           ) : (
             <>
               <Route path="/" element={<Dashboard isDemo={isDemo} />} />
