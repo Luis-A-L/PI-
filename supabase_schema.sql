@@ -53,6 +53,7 @@ CREATE TABLE public.children (
     counselor_name TEXT,
     previous_admissions BOOLEAN,
     previous_admissions_local TEXT,
+    previous_admissions_history JSONB,
 
     -- 3. Vulnerabilidades
     socio_educational_measure BOOLEAN,
@@ -74,7 +75,7 @@ CREATE TABLE public.children (
     family_composition JSONB, -- Tabela 5.1
     responsible_family TEXT,
     siblings_in_care BOOLEAN,
-    siblings_details TEXT,
+    siblings_details JSONB,
     
     -- 5.2 Habitacional
     housing_condition TEXT,
@@ -135,8 +136,27 @@ CREATE TABLE public.children (
     
     -- Legacy / Meta
     notes TEXT,
+    pia_status TEXT DEFAULT 'draft',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- 3.1 Child Photos
+CREATE TABLE IF NOT EXISTS public.child_photos (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    child_id UUID REFERENCES public.children(id) NOT NULL,
+    url TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 3.2 Child Notes (Diário)
+CREATE TABLE IF NOT EXISTS public.child_notes (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    child_id UUID REFERENCES public.children(id) NOT NULL,
+    institution_id UUID REFERENCES public.institutions(id) NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 
 -- 4. Technical Reports
 CREATE TABLE public.technical_reports (
@@ -160,9 +180,32 @@ ALTER TABLE public.institutions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.children ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.technical_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.child_photos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.child_notes ENABLE ROW LEVEL SECURITY;
 
 -- Policies (Simplified for re-run)
 CREATE POLICY "Users can view own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);
 CREATE POLICY "Users can view their own institution" ON public.institutions FOR SELECT USING (id IN (SELECT institution_id FROM public.profiles WHERE id = auth.uid()));
 CREATE POLICY "Institutions manage their own children" ON public.children FOR ALL TO authenticated USING (institution_id = (SELECT institution_id FROM public.profiles WHERE id = auth.uid())) WITH CHECK (institution_id = (SELECT institution_id FROM public.profiles WHERE id = auth.uid()));
 CREATE POLICY "Institutions manage their own reports" ON public.technical_reports FOR ALL TO authenticated USING (institution_id = (SELECT institution_id FROM public.profiles WHERE id = auth.uid())) WITH CHECK (institution_id = (SELECT institution_id FROM public.profiles WHERE id = auth.uid()));
+CREATE POLICY "Institutions manage their own photos" ON public.child_photos FOR ALL TO authenticated USING (child_id IN (SELECT id FROM public.children));
+
+-- Policies for Notes
+CREATE POLICY "Institutions manage their own notes" ON public.child_notes
+    FOR ALL TO authenticated
+    USING (institution_id = (SELECT institution_id FROM public.profiles WHERE id = auth.uid()))
+    WITH CHECK (institution_id = (SELECT institution_id FROM public.profiles WHERE id = auth.uid()));
+
+-- STORAGE SETUP (Correção do Upload de Foto)
+-- Cria o bucket se não existir
+INSERT INTO storage.buckets (id, name, public) VALUES ('child-photos', 'child-photos', true) ON CONFLICT DO NOTHING;
+
+-- Permissões de Storage
+CREATE POLICY "Authenticated users can upload child photos" ON storage.objects
+  FOR INSERT TO authenticated WITH CHECK (bucket_id = 'child-photos');
+
+CREATE POLICY "Authenticated users can update child photos" ON storage.objects
+  FOR UPDATE TO authenticated USING (bucket_id = 'child-photos');
+
+CREATE POLICY "Anyone can view child photos" ON storage.objects
+  FOR SELECT TO public USING (bucket_id = 'child-photos');

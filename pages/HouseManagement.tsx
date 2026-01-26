@@ -13,6 +13,7 @@ const HouseManagement = () => {
   const [financials, setFinancials] = useState<any[]>([]);
   const [loadingFinancials, setLoadingFinancials] = useState(false);
   const [newExpense, setNewExpense] = useState({ description: '', amount: '', date: new Date().toISOString().split('T')[0], category: 'Manutenção' });
+  const viewingInstitutionId = localStorage.getItem('admin_viewing_institution_id');
 
   useEffect(() => {
     fetchInstitution();
@@ -26,6 +27,24 @@ const HouseManagement = () => {
 
   const fetchInstitution = async () => {
     try {
+        if (viewingInstitutionId) {
+            const { data: inst } = await supabase.from('institutions').select('*').eq('id', viewingInstitutionId).single();
+            if (inst) {
+                setInstitution(inst);
+                setFormData({
+                    name: inst.name || '',
+                    email: inst.email || '',
+                    phone: inst.phone || '',
+                    manager: inst.manager || '',
+                    cnpj: inst.cnpj || '',
+                    address: inst.address || '',
+                    photo_url: inst.photo_url || ''
+                });
+            }
+            setLoading(false);
+            return;
+        }
+
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
             setLoading(false);
@@ -168,10 +187,10 @@ const HouseManagement = () => {
                         ) : (
                             <Building2 className="w-10 h-10 text-slate-400" />
                         )}
-                        <label className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                        {!viewingInstitutionId && <label className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
                             <Camera className="text-white w-6 h-6" />
                             <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
-                        </label>
+                        </label>}
                     </div>
                     <div>
                         <h3 className="font-bold text-lg text-slate-900">{formData.name || 'Nome da Instituição'}</h3>
@@ -206,11 +225,11 @@ const HouseManagement = () => {
                     </div>
                 </div>
 
-                <div className="flex justify-end pt-4">
+                {!viewingInstitutionId && <div className="flex justify-end pt-4">
                     <button type="submit" disabled={saving} className="rounded-lg bg-[#458C57] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#367044] focus:outline-none focus:ring-2 focus:ring-[#458C57] focus:ring-offset-2 shadow-sm transition-all disabled:opacity-50">
                         {saving ? 'Salvando...' : <><Save className="w-4 h-4 mr-2" /> Salvar Alterações</>}
                     </button>
-                </div>
+                </div>}
             </form>
         </div>
       )}
@@ -218,7 +237,7 @@ const HouseManagement = () => {
       {activeTab === 'financials' && (
           <div className="space-y-6">
               {/* Add Expense Form */}
-              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+              {!viewingInstitutionId && <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                   <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center">
                       <Plus className="w-5 h-5 mr-2 text-[#458C57]" />
                       Nova Despesa / Registro
@@ -252,7 +271,7 @@ const HouseManagement = () => {
                           </button>
                       </div>
                   </form>
-              </div>
+              </div>}
 
               {/* Expenses List */}
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -284,7 +303,9 @@ const HouseManagement = () => {
                                       - R$ {item.amount.toFixed(2).replace('.', ',')}
                                   </td>
                                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                                      {!viewingInstitutionId && 
                                       <button onClick={() => handleDeleteExpense(item.id)} className="text-red-400 hover:text-red-600 p-1"><Trash2 size={16} /></button>
+                                      }
                                   </td>
                               </tr>
                           ))}

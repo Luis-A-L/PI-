@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { Building2, Plus, Trash2, X, User, Eye, Mail, Shield, Send, Users, Link as LinkIcon, Copy } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Building2, Plus, Trash2, X, User, Eye, Mail, Shield, Send, Users, Link as LinkIcon, Copy, LogIn, Check } from 'lucide-react';
 
 interface AdminHousesProps {
   isDemo?: boolean;
@@ -17,6 +18,7 @@ interface Institution {
 }
 
 const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
+  const navigate = useNavigate();
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -57,6 +59,7 @@ const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
       fetchInstitutions();
       setShowModal(false);
       setFormData({ name: '', email: '', phone: '', manager: '', cnpj: '' });
+      alert("Instituição cadastrada! Clique no ícone de escudo (Gerenciar Acesso) na lista para convidar o administrador.");
     } else {
       console.error("Erro ao salvar:", error);
       alert('Erro ao salvar: ' + (error.message || JSON.stringify(error)));
@@ -92,9 +95,15 @@ const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
         // 2. Gerar Link
         const link = `${window.location.origin}/#/cadastro-convite?token=${data.token}`;
         setGeneratedLink(link);
+
+        // NOTA SOBRE SMTP:
+        // Para envio automático (sem mailto), configure o SMTP no Painel do Supabase e use uma Edge Function:
+        // 1. Settings -> Auth -> SMTP Settings (no Dashboard Supabase)
+        // 2. Crie uma Edge Function 'send-invite' que use essas credenciais.
+        // 3. Chame aqui: await supabase.functions.invoke('send-invite', { body: { email: inviteEmail, link } });
         
     } catch (err: any) {
-        console.error("Erro ao enviar convite:", err);
+        console.error("Erro ao enviar convite:", err);       
         alert("Erro ao gerar convite: " + err.message);
     } finally {
         setIsInviting(false);
@@ -109,11 +118,37 @@ const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
         return;
     }
 
-    const { error } = await supabase.from('profiles').delete().eq('id', userId);
-    if (error) {
-        alert('Erro ao remover usuário: ' + error.message);
-    } else {
+    try {
+        // Limpar dados vinculados ao usuário antes de excluir
+        // 1. Buscar posts do usuário para apagar comentários neles (evitar erro de FK em comments)
+        const { data: userPosts } = await supabase.from('community_posts').select('id').eq('author_id', userId);
+        if (userPosts && userPosts.length > 0) {
+            const postIds = userPosts.map(p => p.id);
+            await supabase.from('community_comments').delete().in('post_id', postIds);
+        }
+
+        // 2. Apagar comentários feitos pelo usuário e posts do usuário
+        await supabase.from('community_comments').delete().eq('author_id', userId);
+        const { error: postsError } = await supabase.from('community_posts').delete().eq('author_id', userId);
+        if (postsError) throw postsError;
+
+        // 3. Excluir Perfil e verificar se apagou
+        const { error, data } = await supabase.from('profiles').delete().eq('id', userId).select();
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+             alert("ERRO: O usuário não foi excluído.\n\nProvável causa: Bloqueio de segurança (RLS) no banco de dados.\n\nSOLUÇÃO: Vá no Supabase > SQL Editor e execute:\nALTER TABLE profiles DISABLE ROW LEVEL SECURITY;");
+             return;
+        }
+
         setInstitutionUsers(institutionUsers.filter(u => u.id !== userId));
+    } catch (error: any) {
+        console.error("Erro ao remover usuário:", error);
+        if (error.message?.includes('community_posts_author_id_fkey')) {
+            alert("ERRO DE PERMISSÃO (Foreign Key):\n\nO sistema não conseguiu apagar as postagens do usuário antes de removê-lo. O banco de dados bloqueou a ação.\n\nSOLUÇÃO: Vá no Supabase > SQL Editor e execute:\nALTER TABLE community_posts DISABLE ROW LEVEL SECURITY;\nALTER TABLE community_comments DISABLE ROW LEVEL SECURITY;");
+        } else {
+            alert('Erro ao remover usuário: ' + error.message);
+        }
     }
   };
 
@@ -139,6 +174,61 @@ const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
         setInstitutionChildren(childrenWithPhotos);
     }
     setLoadingChildren(false);
+  };
+
+  const handleEnterHouse = (inst: Institution) => {
+      localStorage.setItem('admin_viewing_institution_id', inst.id);
+      localStorage.setItem('admin_viewing_institution_name', inst.name);
+      navigate('/');
+  };
+
+  const handleDeleteInstitution = async (id: string) => {
+      if (!confirm('Tem certeza que deseja excluir esta instituição? Todos os dados vinculados (equipe, crianças, financeiro) serão perdidos permanentemente.')) return;
+
+      if (isDemo) {
+          setInstitutions(institutions.filter(i => i.id !== id));
+          return;
+      }
+
+      try {
+          // 1. Limpeza manual de dados vinculados (Cascade Frontend)
+          // Busca crianças para limpar seus sub-dados
+          const { data: children } = await supabase.from('children').select('id').eq('institution_id', id);
+          if (children && children.length > 0) {
+              const childIds = children.map(c => c.id);
+              await supabase.from('technical_reports').delete().in('child_id', childIds);
+              await supabase.from('child_photos').delete().in('child_id', childIds);
+              await supabase.from('child_notes').delete().in('child_id', childIds);
+              await supabase.from('pia_history').delete().in('child_id', childIds);
+              await supabase.from('children').delete().eq('institution_id', id);
+          }
+
+          // Limpa outros vínculos diretos
+          await supabase.from('financial_records').delete().eq('institution_id', id);
+          await supabase.from('community_comments').delete().eq('institution_id', id);
+          await supabase.from('community_posts').delete().eq('institution_id', id);
+          await supabase.from('house_invites').delete().eq('institution_id', id);
+          await supabase.from('profiles').delete().eq('institution_id', id);
+
+          // 2. Exclui a instituição e VERIFICA se apagou (retornando os dados excluídos)
+          const { error, data } = await supabase.from('institutions').delete().eq('id', id).select();
+          if (error) throw error;
+
+          // Se data vier vazio, significa que o banco ignorou o comando (provavelmente RLS)
+          if (!data || data.length === 0) {
+              alert("ERRO: A instituição não foi excluída do banco de dados.\n\nCausa provável: O banco está bloqueando exclusões feitas pelo login Master (Anônimo).\n\nSOLUÇÃO: Vá no Supabase > SQL Editor e execute:\nALTER TABLE institutions DISABLE ROW LEVEL SECURITY;");
+              return; // Não atualiza a tela para não enganar
+          }
+
+          setInstitutions(institutions.filter(i => i.id !== id));
+      } catch (error: any) {
+          console.error("Erro ao excluir:", error);
+          if (error.message?.includes('profiles_institution_id_fkey')) {
+              alert("ERRO DE PERMISSÃO (Foreign Key):\n\nO sistema não conseguiu apagar os perfis de usuários (equipe) desta instituição. O banco de dados impediu a exclusão.\n\nSOLUÇÃO:\n1. Vá no Supabase > SQL Editor.\n2. Execute:\nALTER TABLE profiles DISABLE ROW LEVEL SECURITY;");
+          } else {
+              alert('Erro ao excluir instituição: ' + error.message);
+          }
+      }
   };
 
   return (
@@ -170,7 +260,7 @@ const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
             ) : institutions.length === 0 ? (
               <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-500">Nenhuma instituição cadastrada.</td></tr>
             ) : institutions.map((inst) => (
-              <tr key={inst.id} onClick={() => handleOpenDetails(inst)} className="hover:bg-slate-50 transition-colors cursor-pointer group">
+              <tr key={inst.id} onClick={() => handleEnterHouse(inst)} className="hover:bg-slate-50 transition-colors cursor-pointer group">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center">
                     <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 mr-3 border border-slate-200">
@@ -192,8 +282,9 @@ const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <div className="flex items-center justify-end space-x-2">
                     <button onClick={(e) => { e.stopPropagation(); handleOpenAccess(inst); }} className="text-slate-400 hover:text-blue-600 p-2 hover:bg-blue-50 rounded-full transition-colors" title="Gerenciar Acesso"><Shield size={18} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); handleEnterHouse(inst); }} className="text-slate-400 hover:text-purple-600 p-2 hover:bg-purple-50 rounded-full transition-colors" title="Acessar Painel"><LogIn size={18} /></button>
                     <button onClick={(e) => { e.stopPropagation(); handleOpenDetails(inst); }} className="text-slate-400 hover:text-[#458C57] p-2 hover:bg-slate-100 rounded-full transition-colors"><Eye size={18} /></button>
-                    <button onClick={(e) => e.stopPropagation()} className="text-red-400 hover:text-red-600 p-2 hover:bg-red-50 rounded-full transition-colors"><Trash2 size={18} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); handleDeleteInstitution(inst.id); }} className="text-red-400 hover:text-red-600 p-2 hover:bg-red-50 rounded-full transition-colors"><Trash2 size={18} /></button>
                   </div>
                 </td>
               </tr>
@@ -436,7 +527,7 @@ const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
                     ) : (
                         <div className="text-center">
                             <div className="mx-auto w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mb-4 text-green-600">
-                                <Check size={24} />
+                                <Check size={24} /> 
                             </div>
                             <h3 className="text-lg font-bold text-slate-900 mb-2">Link Gerado com Sucesso!</h3>
                             <p className="text-sm text-slate-500 mb-4">Copie o link abaixo e envie para <strong>{inviteName}</strong>:</p>
@@ -445,6 +536,15 @@ const AdminHouses: React.FC<AdminHousesProps> = ({ isDemo }) => {
                                 <input type="text" readOnly value={generatedLink} className="bg-transparent border-none w-full text-sm text-slate-600 focus:ring-0" />
                                 <button onClick={() => navigator.clipboard.writeText(generatedLink)} className="text-[#458C57] hover:text-[#367044] font-bold text-sm flex items-center"><Copy size={16} className="mr-1"/> Copiar</button>
                             </div>
+
+                            <a 
+                                href={`mailto:${inviteEmail}?subject=Convite para Curitiba Acolhe&body=Olá ${inviteName},%0D%0A%0D%0AVocê foi convidado para administrar a instituição no sistema Curitiba Acolhe.%0D%0A%0D%0AAcesse o link abaixo para definir sua senha e ativar sua conta:%0D%0A${generatedLink}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="w-full py-2 px-4 bg-[#458C57] text-white rounded-lg hover:bg-[#367044] flex items-center justify-center mb-3 transition-colors"
+                            >
+                                <Mail size={18} className="mr-2" /> Abrir Cliente de E-mail
+                            </a>
                             
                             <button onClick={() => { setShowAccessModal(false); setGeneratedLink(''); setSelectedInstitution(null); }} className="w-full py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50">Fechar</button>
                         </div>

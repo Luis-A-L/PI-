@@ -21,14 +21,44 @@ const Login: React.FC<LoginProps> = ({ onDemoLogin, onAdminLogin }) => {
     setLoading(true);
     setError(null);
 
-    // Admin Bypass
+    // Master Admin Bypass
     if (email === 'admin' && password === 'admin') {
       setTimeout(() => {
+        localStorage.removeItem('admin_role');
         onAdminLogin();
         setLoading(false);
         navigate('/admin/casas');
       }, 800);
       return;
+    }
+
+    // House Admin Bypass (admin@admin.com)
+    if (email === 'admin@admin.com' && password === 'admin') {
+      // Fetch a default institution
+      try {
+        const { data, error } = await supabase.from('institutions').select('id, name').limit(1).single();
+
+        if (!data) {
+          setError("Nenhuma instituição encontrada para login administrativo.");
+          setLoading(false);
+          return;
+        }
+
+        setTimeout(() => {
+          localStorage.setItem('admin_viewing_institution_id', data.id);
+          localStorage.setItem('admin_viewing_institution_name', data.name);
+          localStorage.setItem('admin_role', 'house_admin');
+
+          onAdminLogin();
+          setLoading(false);
+          navigate('/');
+        }, 800);
+        return;
+      } catch (err) {
+        setError("Erro ao buscar instituição base.");
+        setLoading(false);
+        return;
+      }
     }
 
     // Bypass for testing/demo request
@@ -50,7 +80,13 @@ const Login: React.FC<LoginProps> = ({ onDemoLogin, onAdminLogin }) => {
       if (error) throw error;
       navigate('/');
     } catch (err: any) {
-      setError(err.message || 'Falha na autenticação');
+      let msg = err.message || 'Falha na autenticação';
+      if (msg.includes("Email not confirmed")) {
+        msg = "E-mail não confirmado. Peça ao administrador para desativar a opção 'Confirm Email' no Supabase para liberar seu acesso.";
+      } else if (msg.includes("Invalid login credentials")) {
+        msg = "E-mail ou senha incorretos.";
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -94,7 +130,7 @@ const Login: React.FC<LoginProps> = ({ onDemoLogin, onAdminLogin }) => {
                 <p className="text-sm text-red-700">{error}</p>
               </div>
             )}
-            
+
             <div>
               <label htmlFor="email" className="block text-sm font-bold text-slate-700">
                 E-mail Institucional
@@ -159,7 +195,7 @@ const Login: React.FC<LoginProps> = ({ onDemoLogin, onAdminLogin }) => {
               </div>
             </div>
             <div className="mt-6 text-center text-xs text-slate-400">
-              Sistema em conformidade com a LGPD.<br/>
+              Sistema em conformidade com a LGPD.<br />
               Acesso auditado e monitorado.
             </div>
           </div>

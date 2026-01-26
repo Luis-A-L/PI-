@@ -9,6 +9,7 @@ import ChildRegistration from './pages/ChildRegistration';
 import Reports from './pages/Reports';
 import ChildProfile from './pages/ChildProfile';
 import Community from './pages/Community';
+import Schedule from './pages/Schedule';
 import AdminHouses from './pages/AdminHouses';
 import Team from './pages/team';
 import HouseManagement from './pages/HouseManagement';
@@ -100,7 +101,7 @@ const App: React.FC = () => {
             Para executar este MVP conectado ao banco, configure as variáveis de ambiente.
           </p>
           <div className="mt-6 flex justify-center">
-            <button 
+            <button
               onClick={handleDemoLogin}
               className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md text-sm font-medium"
             >
@@ -125,30 +126,31 @@ const App: React.FC = () => {
   return (
     <HashRouter>
       <Routes>
-        <Route 
-          path="/login" 
-          element={!isAuthenticated ? <Login onDemoLogin={handleDemoLogin} onAdminLogin={handleAdminLogin} /> : <Navigate to={isAdmin ? "/admin/casas" : "/"} replace />} 
+        <Route
+          path="/login"
+          element={!isAuthenticated ? <Login onDemoLogin={handleDemoLogin} onAdminLogin={handleAdminLogin} /> : <Navigate to={isAdmin && localStorage.getItem('admin_role') !== 'house_admin' ? "/admin/casas" : "/"} replace />}
         />
-        
+
         {/* Rota Pública de Aceite de Convite */}
         <Route path="/cadastro-convite" element={<RegisterInvite />} />
-        
+
         {/* Protected Routes with Layout */}
         <Route element={isAuthenticated ? (
-            <Layout onLogout={handleLogout} isDemo={isDemo} isAdmin={isAdmin} />
+          <Layout onLogout={handleLogout} isDemo={isDemo} isAdmin={isAdmin} />
         ) : <Navigate to="/login" replace />}>
           {isAdmin ? (
-             <>
-               <Route path="/admin/casas" element={<AdminHouses isDemo={isDemo} />} />
-               <Route path="/" element={<Dashboard isDemo={isDemo} />} />
-               <Route path="/novo-acolhimento" element={<NewAdmission isDemo={isDemo} />} />
-               <Route path="/cadastro-crianca" element={<ChildRegistration isDemo={isDemo} />} />
-               <Route path="/acolhido/:id" element={<ChildProfile isDemo={isDemo} />} />
-               <Route path="/relatorios" element={<Reports isDemo={isDemo} />} />
-               <Route path="/comunidade" element={<Community isDemo={isDemo} />} />
-               <Route path="/equipe" element={<Team isDemo={isDemo} />} />
-               <Route path="/gestao-casa" element={<HouseManagement />} />
-             </>
+            <>
+              <Route path="/admin/casas" element={localStorage.getItem('admin_role') !== 'house_admin' ? <AdminHouses isDemo={isDemo} /> : <Navigate to="/" />} />
+              <Route path="/" element={<Dashboard isDemo={isDemo} />} />
+              <Route path="/novo-acolhimento" element={<NewAdmission isDemo={isDemo} />} />
+              <Route path="/cadastro-crianca" element={<ChildRegistration isDemo={isDemo} />} />
+              <Route path="/acolhido/:id" element={<ChildProfile isDemo={isDemo} />} />
+              <Route path="/relatorios" element={<Reports isDemo={isDemo} />} />
+              <Route path="/agenda" element={<Schedule isDemo={isDemo} />} />
+              <Route path="/comunidade" element={<Community isDemo={isDemo} />} />
+              <Route path="/equipe" element={<Team isDemo={isDemo} />} />
+              <Route path="/gestao-casa" element={<HouseManagement />} />
+            </>
           ) : (
             <>
               <Route path="/" element={<Dashboard isDemo={isDemo} />} />
@@ -156,6 +158,7 @@ const App: React.FC = () => {
               <Route path="/cadastro-crianca" element={<ChildRegistration isDemo={isDemo} />} />
               <Route path="/acolhido/:id" element={<ChildProfile isDemo={isDemo} />} />
               <Route path="/relatorios" element={<Reports isDemo={isDemo} />} />
+              <Route path="/agenda" element={<Schedule isDemo={isDemo} />} />
               <Route path="/comunidade" element={<Community isDemo={isDemo} />} />
               <Route path="/equipe" element={<Team isDemo={isDemo} />} />
               <Route path="/gestao-casa" element={<HouseManagement />} />

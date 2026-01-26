@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Lock, Save, UserCheck, Building2 } from 'lucide-react';
+import { Lock, Save, UserCheck, Building2, AlertCircle } from 'lucide-react';
 
 const RegisterInvite = () => {
   const [searchParams] = useSearchParams();
@@ -14,6 +14,7 @@ const RegisterInvite = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [registerError, setRegisterError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) {
@@ -43,8 +44,9 @@ const RegisterInvite = () => {
 
   const handleRegister = async (e: React.FormEvent) => {
       e.preventDefault();
+      setRegisterError(null);
       if (password !== confirmPassword) {
-          alert('As senhas não conferem.');
+          setRegisterError('As senhas não conferem.');
           return;
       }
 
@@ -71,7 +73,7 @@ const RegisterInvite = () => {
 
           if (authData.user) {
               // 2. Criar perfil na tabela pública (Garantia extra além do trigger)
-              await supabase.from('profiles').upsert({
+              const { error: profileError } = await supabase.from('profiles').upsert({
                   id: authData.user.id,
                   email: invite.email,
                   full_name: fullName,
@@ -80,14 +82,31 @@ const RegisterInvite = () => {
                   cpf: invite.cpf
               });
 
+              if (profileError) {
+                  // Se der erro, apenas logamos, pois o Trigger do banco já deve ter criado o perfil corretamente.
+                  console.warn("Aviso na criação de perfil (pode ter sido criado pelo Trigger):", profileError.message);
+              }
+
               // 3. Marcar convite como usado para não ser usado novamente
               await supabase.from('house_invites').update({ used: true }).eq('id', invite.id);
 
-              alert('Cadastro realizado com sucesso! Você já pode acessar o sistema.');
-              navigate('/');
+              if (authData.session) {
+                  alert('Cadastro realizado com sucesso! Você já pode acessar o sistema.');
+                  navigate('/');
+              } else {
+                  alert('Cadastro realizado, mas o login foi bloqueado porque o e-mail requer confirmação.\n\nPARA ENTRAR DIRETO (SEM E-MAIL):\n1. Vá no Supabase Dashboard > Authentication > Providers > Email.\n2. DESATIVE a opção "Confirm Email".\n3. Salve e tente novamente.');
+                  navigate('/login');
+              }
           }
       } catch (err: any) {
-          alert('Erro ao registrar: ' + err.message);
+          console.error("Erro no registro:", err);
+          let msg = err.message || "Ocorreu um erro ao registrar.";
+          if (msg.includes("Email signups are disabled")) {
+              msg = "O registro está bloqueado. Habilite 'Enable Email Signup' no Supabase. Isso permite criar a conta sem enviar e-mail (desde que 'Confirm Email' esteja desligado).";
+          } else if (msg.includes("Error sending confirmation email")) {
+              msg = "O sistema tentou enviar um e-mail de confirmação e falhou. Para corrigir: Vá no Painel Supabase > Authentication > Providers > Email e DESATIVE a opção 'Confirm Email'.";
+          }
+          setRegisterError(msg);
       } finally {
           setLoading(false);
       }
@@ -121,6 +140,13 @@ const RegisterInvite = () => {
         </div>
         
         <form onSubmit={handleRegister} className="space-y-4">
+          {registerError && (
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 flex items-start rounded-r-lg">
+                <AlertCircle className="w-5 h-5 text-red-500 mr-2 mt-0.5 flex-shrink-0" />
+                <p className="text-sm text-red-700">{registerError}</p>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1">Nome Completo</label>
             <input 

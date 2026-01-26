@@ -11,6 +11,7 @@ const Reports: React.FC<ReportsProps> = ({ isDemo }) => {
   const [children, setChildren] = useState<Child[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const viewingInstitutionId = localStorage.getItem('admin_viewing_institution_id');
   
   // Modal/Form State
   const [selectedChild, setSelectedChild] = useState<Child | null>(null);
@@ -38,7 +39,7 @@ const Reports: React.FC<ReportsProps> = ({ isDemo }) => {
        setTimeout(() => {
         setChildren([
           { 
-            id: '1', full_name: 'Ana Clara Souza', sex: 'F', birth_date: '2015-05-10', entry_date: '2023-01-15', institution_id: 'demo', notes: '', autos_number: '0001234-56.2023.8.16.0000', admission_reason_types: ['Demo'], created_at: '', child_photos: [{ url: 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?auto=format&fit=crop&w=150&q=80' }]
+            id: '1', full_name: 'Ana Clara Souza', sex: 'F', birth_date: '2015-05-10', entry_date: '2023-01-15', institution_id: 'demo', notes: '', autos_number: '0001234-56.2023.8.16.0000', admission_reason_types: ['Demo'], created_at: ''
           } as any,
           { 
             id: '2', full_name: 'Marcos Vinícius Pereira', sex: 'M', birth_date: '2010-11-20', entry_date: '2023-08-10', institution_id: 'demo', notes: '', autos_number: '0005555-12.2023.8.16.0000', created_at: ''
@@ -52,14 +53,26 @@ const Reports: React.FC<ReportsProps> = ({ isDemo }) => {
       return;
     }
 
-    const { data, error } = await supabase.from('children').select('*, child_photos(url, created_at)').order('full_name');
+    let targetInstitutionId = viewingInstitutionId;
+
+    if (!targetInstitutionId) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+            const { data: profile } = await supabase.from('profiles').select('institution_id').eq('id', user.id).single();
+            targetInstitutionId = profile?.institution_id;
+        }
+    }
+
+    if (!targetInstitutionId) {
+        setChildren([]);
+        setLoading(false);
+        return;
+    }
+
+    const { data, error } = await supabase.from('children').select('*').eq('institution_id', targetInstitutionId).order('full_name');
     
     if (!error && data) {
-        const childrenWithPhotos = data.map((child: any) => ({
-            ...child,
-            child_photos: child.child_photos ? child.child_photos.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) : []
-        }));
-        setChildren(childrenWithPhotos);
+        setChildren(data);
     }
     setLoading(false);
   };
@@ -211,11 +224,7 @@ const Reports: React.FC<ReportsProps> = ({ isDemo }) => {
                 className="flex items-center p-4 border border-slate-200 rounded-lg hover:border-[#63BF7A] hover:bg-[#88F2A2]/10 hover:shadow-md transition-all text-left group bg-white"
               >
                 <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold mr-4 text-lg border-2 overflow-hidden ${child.sex === 'F' ? 'bg-pink-50 text-pink-600 border-pink-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
-                  {(child as any).child_photos && (child as any).child_photos.length > 0 ? (
-                      <img src={(child as any).child_photos[0].url} alt={child.full_name} className="h-full w-full object-cover" />
-                  ) : (
-                      child.full_name.charAt(0)
-                  )}
+                  {child.full_name.charAt(0)}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-base font-bold text-slate-800 truncate group-hover:text-[#458C57]">{child.full_name}</p>
